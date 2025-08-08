@@ -34,7 +34,7 @@ A browser-based tool for gurus to edit result sheets for 3 Card Blind MTG matche
    - Update `CONFIG.GOOGLE_CLIENT_ID` in `public/js/config.js`
 
 3. **Access your app:**
-   - Open `public/index.html` in your browser
+   - Open `index.html` in your browser
    - Or access via your hosting URL
 
 ### Option 2: Local Development
@@ -42,10 +42,10 @@ A browser-based tool for gurus to edit result sheets for 3 Card Blind MTG matche
 1. **Serve files locally:**
    ```bash
    # Python 3
-   cd public && python -m http.server 8000
+   python -m http.server 8000
    
    # Node.js (with npx)
-   cd public && npx serve .
+   npx serve .
    
    # Live Server (VS Code extension)
    # Right-click index.html → "Open with Live Server"
