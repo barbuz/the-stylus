@@ -1,0 +1,24 @@
+{
+  "name": "3cb-visual-guru",
+  "version": "1.0.0",
+  "description": "A browser-based tool for gurus to edit result sheets for 3 Card Blind MTG matches from 3cardblind.com",
+  "main": "public/index.html",
+  "type": "module",
+  "scripts": {
+    "dev": "echo 'Open public/index.html in your browser'",
+    "build": "echo 'No build required - static HTML/CSS/JS'",
+    "test": "echo 'Test script placeholder'"
+  },
+  "keywords": [
+    "3cardblind",
+    "mtg",
+    "magic-the-gathering",
+    "tournament",
+    "result-sheets",
+    "guru-tools",
+    "browser-app",
+    "static-hosting"
+  ],
+  "author": "Leo Ghignone",
+  "license": "MIT"
+}
