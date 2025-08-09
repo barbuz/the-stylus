@@ -31,6 +31,7 @@ export class GuruAnalysisInterface {
         // Navigation buttons
         document.getElementById('prev-btn').addEventListener('click', () => this.previousRow());
         document.getElementById('next-btn').addEventListener('click', () => this.nextRow());
+        document.getElementById('skip-btn').addEventListener('click', () => this.skipToNextIncomplete());
         document.getElementById('restart-analysis-btn').addEventListener('click', () => this.restartAnalysis());
     }
 
@@ -354,6 +355,10 @@ export class GuruAnalysisInterface {
         // Update navigation buttons
         document.getElementById('prev-btn').disabled = this.currentRowIndex === 0;
         document.getElementById('next-btn').disabled = this.currentRowIndex >= this.allRows.length - 1;
+        
+        // Update skip button - enabled if there are incomplete rows after current one
+        const hasIncompleteAfterCurrent = this.findFirstEmptyAnalysis(this.currentRowIndex + 1) < this.allRows.length;
+        document.getElementById('skip-btn').disabled = !hasIncompleteAfterCurrent;
 
         // Hide completion message
         document.getElementById('completion-message').style.display = 'none';
@@ -772,6 +777,19 @@ export class GuruAnalysisInterface {
         if (this.currentRowIndex > 0) {
             this.currentRowIndex--;
             await this.showCurrentRow();
+        }
+    }
+
+    async skipToNextIncomplete() {
+        // Find the next empty/discrepancy starting from after current row
+        const nextIncompleteIndex = this.findFirstEmptyAnalysis(this.currentRowIndex + 1);
+        
+        if (nextIncompleteIndex < this.allRows.length) {
+            this.currentRowIndex = nextIncompleteIndex;
+            await this.showCurrentRow();
+        } else {
+            // No more incomplete rows found, show completion message
+            this.showCompletionMessage();
         }
     }
 
