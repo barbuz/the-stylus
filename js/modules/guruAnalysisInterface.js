@@ -580,7 +580,8 @@ export class GuruAnalysisInterface {
     async reloadAllData() {
         try {
             // Get fresh data for the entire sheet
-            const guruSignature = this.authManager?.guruSignature;
+            // Get the guru signature from localStorage as a fallback since we don't have direct access to GuruSignature instance
+            const guruSignature = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE);
             const freshSheetData = await this.sheetsAPI.getSheetData(this.currentData.sheetId, guruSignature);
             
             // Store the current row index to restore position
@@ -606,7 +607,8 @@ export class GuruAnalysisInterface {
             console.log('🔄 Starting background data refresh...');
             
             // Get fresh data for the entire sheet
-            const guruSignature = this.authManager?.guruSignature;
+            // Get the guru signature from localStorage as a fallback since we don't have direct access to GuruSignature instance
+            const guruSignature = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE);
             const freshSheetData = await this.sheetsAPI.getSheetData(this.currentData.sheetId, guruSignature);
             
             // Store the current row info to find it again after reload
@@ -661,7 +663,12 @@ export class GuruAnalysisInterface {
     buildDiscrepancyDisplay(currentRow) {
         // Determine which sheet we're on based on sheet title or current guru signature
         const sheetTitle = currentRow.sheetTitle.toLowerCase();
-        const currentGuru = this.guruSignature.toLowerCase();
+        
+        // Get the current guru signature safely
+        let currentGuru = '';
+        if (this.authManager && this.authManager.guruSignature) {
+            currentGuru = this.authManager.guruSignature.toLowerCase();
+        }
         
         // Collect other guru analyses (exclude the current guru's analysis)
         const otherAnalyses = [];
