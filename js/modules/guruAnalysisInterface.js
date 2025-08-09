@@ -16,6 +16,10 @@ export class GuruAnalysisInterface {
         this.currentRowIndex = 0;
         this.currentSheetIndex = 0;
         this.bindEvents();
+        
+        // Handle window resize for mobile/desktop layout changes
+        this.handleResize = this.handleResize.bind(this);
+        window.addEventListener('resize', this.handleResize);
     }
 
     bindEvents() {
@@ -28,6 +32,16 @@ export class GuruAnalysisInterface {
         document.getElementById('prev-btn').addEventListener('click', () => this.previousRow());
         document.getElementById('next-btn').addEventListener('click', () => this.nextRow());
         document.getElementById('restart-analysis-btn').addEventListener('click', () => this.restartAnalysis());
+    }
+
+    handleResize() {
+        // Re-position deck info when window is resized (e.g., device rotation)
+        if (this.allRows.length > 0 && this.currentRowIndex < this.allRows.length) {
+            const currentRow = this.allRows[this.currentRowIndex];
+            // Re-display deck info for both players to update positioning
+            this.displayDeckInfo('player1', currentRow.player1);
+            this.displayDeckInfo('player2', currentRow.player2);
+        }
     }
 
     async loadData(sheetData) {
@@ -849,7 +863,19 @@ export class GuruAnalysisInterface {
             const deckInfoDiv = document.createElement('div');
             deckInfoDiv.className = 'deck-info';
             deckInfoDiv.innerHTML = infoElements.join(' ');
-            cardsContainer.insertBefore(deckInfoDiv, cardsContainer.firstChild);
+            
+            // On mobile (768px and below), place deck info after the cards
+            // On desktop, place it before the cards (current behavior)
+            const isMobile = window.innerWidth <= 768;
+            
+            if (isMobile) {
+                // Append after cards on mobile
+                cardsContainer.appendChild(deckInfoDiv);
+            } else {
+                // Insert before cards on desktop
+                cardsContainer.insertBefore(deckInfoDiv, cardsContainer.firstChild);
+            }
+            
             console.log('Deck info displayed successfully');
         } else {
             console.log('No info elements to display');
