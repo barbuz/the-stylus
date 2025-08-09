@@ -47,6 +47,9 @@ export class UIController {
         // Add fullscreen class and show the editor
         this.sheetEditor.classList.add('fullscreen-analysis');
         this.sheetEditor.style.display = 'block';
+        
+        // Add body class for mobile scrolling support
+        document.body.classList.add('fullscreen-mode');
     }
 
     hideSheetEditor() {
@@ -61,6 +64,9 @@ export class UIController {
         // Always show these sections
         if (sheetInputSection) sheetInputSection.style.display = 'block';
         if (header) header.style.display = 'block';
+        
+        // Remove body class for mobile scrolling support
+        document.body.classList.remove('fullscreen-mode');
         
         // Only show guru signature section if no signature is set
         // Check if guru signature exists in localStorage using the CONFIG storage key
