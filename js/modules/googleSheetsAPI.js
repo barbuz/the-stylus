@@ -3,7 +3,7 @@ export class GoogleSheetsAPI {
         this.authManager = authManager;
     }
 
-    async getSheetData(sheetId, guruSignature = null) {
+    async getSheetData(sheetId) {
         try {
             if (!this.authManager.isLoggedIn()) {
                 throw new Error('User not authenticated');
@@ -24,36 +24,41 @@ export class GoogleSheetsAPI {
 
             const allSheetsData = [];
 
-            for (const sheet of sheetsToProcess) {
+            // Process Deck Notes sheet separately
+            const deckNotesSheet = sheetsToProcess.find(sheet => 
+                sheet.title.toLowerCase().includes('deck notes')
+            );
+            
+            if (deckNotesSheet) {
                 const response = await gapi.client.sheets.spreadsheets.values.get({
                     spreadsheetId: sheetId,
-                    range: `'${sheet.title}'!A1:Z1000`,
+                    range: `'${deckNotesSheet.title}'!A1:D1000`,
                 });
 
-                let sheetData = {
-                    sheetTitle: sheet.title,
-                    sheetId: sheet.sheetId,
+                allSheetsData.push({
+                    sheetTitle: deckNotesSheet.title,
+                    sheetId: deckNotesSheet.sheetId,
                     values: response.result.values || [],
                     range: response.result.range,
-                    majorDimension: response.result.majorDimension
-                };
+                    majorDimension: response.result.majorDimension,
+                    columnMapping: this.getColumnMapping(deckNotesSheet.title)
+                });
+            }
 
-                // Filter by guru signature if provided, but skip reference sheets like "Deck Notes"
-                if (guruSignature && sheetData.values.length > 0) {
-                    // Don't filter "Deck Notes" sheet - it contains reference data, not guru-specific data
-                    if (!sheet.title.toLowerCase().includes('deck notes')) {
-                        sheetData = this.filterByGuruSignature(sheetData, guruSignature);
-                    }
-                }
+            // Process and merge guru sheets
+            const guruSheets = sheetsToProcess.filter(sheet => 
+                !sheet.title.toLowerCase().includes('deck notes')
+            );
 
-                allSheetsData.push(sheetData);
+            if (guruSheets.length > 0) {
+                const mergedGuruSheet = await this.mergeGuruSheets(sheetId, guruSheets);
+                allSheetsData.push(mergedGuruSheet);
             }
 
             return {
                 sheetId,
                 title: metadata.title,
-                sheets: allSheetsData,
-                guruSignature: guruSignature
+                sheets: allSheetsData
             };
         } catch (error) {
             console.error('API Error:', error);
@@ -61,46 +66,148 @@ export class GoogleSheetsAPI {
         }
     }
 
-    filterByGuruSignature(sheetData, guruSignature) {
-        if (!sheetData.values || sheetData.values.length === 0) {
-            return sheetData;
-        }
+    async mergeGuruSheets(sheetId, guruSheets) {
+        // Sort sheets to ensure consistent order: Red, Blue, Green
+        const sortedSheets = guruSheets.sort((a, b) => {
+            const order = ['red', 'blue', 'green'];
+            const aIndex = order.findIndex(color => a.title.toLowerCase().includes(color));
+            const bIndex = order.findIndex(color => b.title.toLowerCase().includes(color));
+            return aIndex - bIndex;
+        });
 
-        // Find the Guru Signature column
-        const headerRow = sheetData.values[0];
-        const guruSignatureColIndex = headerRow.findIndex(header => 
-            header && header.toLowerCase().includes('guru signature')
+        // Get base data from Red Gurus sheet (columns A:D)
+        const redGuruSheet = sortedSheets.find(sheet => 
+            sheet.title.toLowerCase().includes('red')
         );
 
-        if (guruSignatureColIndex === -1) {
-            console.warn(`No "Guru Signature" column found in ${sheetData.sheetTitle}`);
-            return {
-                ...sheetData,
-                values: [headerRow] // Only return header if no signature column
-            };
+        if (!redGuruSheet) {
+            throw new Error('Red Gurus sheet not found');
         }
 
-        // Filter rows where guru signature matches (case-insensitive)
-        const filteredValues = [headerRow]; // Always include header
-        const originalRowIndices = [0]; // Track original row indices (0 for header)
+        // Run all queries in parallel for maximum performance
+        const allPromises = [
+            // Base data query (A:C from Red Gurus, excluding outcome column D)
+            gapi.client.sheets.spreadsheets.values.get({
+                spreadsheetId: sheetId,
+                range: `'${redGuruSheet.title}'!A1:C1000`,
+            }),
+            // Analysis and signature queries for all guru sheets
+            ...sortedSheets.map(async (sheet) => {
+                const color = sheet.title.toLowerCase().includes('red') ? 'red' :
+                             sheet.title.toLowerCase().includes('blue') ? 'blue' : 'green';
+                
+                const response = await gapi.client.sheets.spreadsheets.values.get({
+                    spreadsheetId: sheetId,
+                    range: `'${sheet.title}'!E1:F1000`, // Only columns E and F (analysis and signature)
+                });
+
+                return {
+                    color,
+                    sheetId: sheet.sheetId,
+                    values: response.result.values || []
+                };
+            })
+        ];
+
+        // Wait for all queries to complete
+        const [baseResponse, ...guruResults] = await Promise.all(allPromises);
+        const baseValues = baseResponse.result.values || [];
         
-        for (let i = 1; i < sheetData.values.length; i++) {
-            const row = sheetData.values[i];
-            const cellSignature = row[guruSignatureColIndex];
-            
-            if (cellSignature && cellSignature.toString().toLowerCase().trim() === guruSignature.toLowerCase().trim()) {
-                filteredValues.push(row);
-                originalRowIndices.push(i); // Store the original row index
+        // Organize guru results by color
+        const guruData = {};
+        guruResults.forEach(result => {
+            guruData[result.color] = {
+                sheetId: result.sheetId,
+                values: result.values
+            };
+        });
+        
+        // Prepare merged data structure
+        const mergedValues = [];
+        
+        if (baseValues.length > 0) {
+            // Create header row: ID, Player 1, Player 2, Red Analysis, Red Signature, Blue Analysis, Blue Signature, Green Analysis, Green Signature
+            const headerRow = [
+                ...baseValues[0], // A:C from base (ID, Player 1, Player 2)
+                'Red Analysis', 'Red Signature',
+                'Blue Analysis', 'Blue Signature', 
+                'Green Analysis', 'Green Signature'
+            ];
+            mergedValues.push(headerRow);
+
+            // Merge data rows
+            for (let i = 1; i < baseValues.length; i++) {
+                const baseRow = baseValues[i] || [];
+                const mergedRow = [...baseRow];
+
+                // Pad base row to 3 columns if needed
+                while (mergedRow.length < 3) {
+                    mergedRow.push('');
+                }
+
+                // Add analysis and signature from each guru sheet
+                for (const color of ['red', 'blue', 'green']) {
+                    const colorData = guruData[color];
+                    if (colorData && colorData.values[i]) {
+                        mergedRow.push(colorData.values[i][0] || ''); // Analysis (column E)
+                        mergedRow.push(colorData.values[i][1] || ''); // Signature (column F)
+                    } else {
+                        mergedRow.push(''); // Empty analysis
+                        mergedRow.push(''); // Empty signature
+                    }
+                }
+
+                mergedValues.push(mergedRow);
             }
         }
 
         return {
-            ...sheetData,
-            values: filteredValues,
-            originalRowIndices: originalRowIndices, // Include mapping to original indices
-            filteredRowCount: filteredValues.length - 1, // Exclude header from count
-            originalRowCount: sheetData.values.length - 1
+            sheetTitle: 'Merged Gurus',
+            sheetId: redGuruSheet.sheetId, // Use Red Gurus sheet ID as primary
+            values: mergedValues,
+            range: `'${redGuruSheet.title}'!A1:I${mergedValues.length}`,
+            majorDimension: 'ROWS',
+            columnMapping: this.getMergedGuruColumnMapping(),
+            guruSheetIds: {
+                red: sortedSheets.find(s => s.title.toLowerCase().includes('red'))?.sheetId,
+                blue: sortedSheets.find(s => s.title.toLowerCase().includes('blue'))?.sheetId,
+                green: sortedSheets.find(s => s.title.toLowerCase().includes('green'))?.sheetId
+            }
         };
+    }
+
+    getMergedGuruColumnMapping() {
+        return {
+            id: 0,              // Column A
+            player1: 1,         // Column B
+            player2: 2,         // Column C
+            redAnalysis: 3,     // Column D
+            redSignature: 4,    // Column E
+            blueAnalysis: 5,    // Column F
+            blueSignature: 6,   // Column G
+            greenAnalysis: 7,   // Column H
+            greenSignature: 8   // Column I
+        };
+    }
+
+    getColumnMapping(sheetTitle) {
+        if (sheetTitle.toLowerCase().includes('deck notes')) {
+            return {
+                decklists: 0,      // Column A
+                clock: 1,          // Column B
+                notes: 2,          // Column C
+                additionalNotes: 3 // Column D
+            };
+        } else {
+            // Guru sheets (Red Gurus, Blue Gurus, Green Gurus)
+            return {
+                id: 0,             // Column A
+                player1: 1,        // Column B
+                player2: 2,        // Column C
+                guruAnalysis: 4,   // Column E
+                guruSignature: 5   // Column F
+            };
+        }
     }
 
     async updateSheetData(sheetId, updates) {
@@ -121,6 +228,30 @@ export class GoogleSheetsAPI {
             });
 
             const requests = updates.updates.map(update => {
+                // Handle merged guru sheet updates by routing to appropriate individual sheet
+                let targetSheetId = update.sheetId;
+                let targetCol = update.col;
+
+                // If this is an update to the merged guru sheet, determine the target sheet and column
+                if (update.isMergedGuruUpdate) {
+                    const columnMapping = this.getMergedGuruColumnMapping();
+                    
+                    if (update.col === columnMapping.redAnalysis + 1 || update.col === columnMapping.redSignature + 1) {
+                        targetSheetId = update.guruSheetIds.red;
+                        targetCol = update.col === columnMapping.redAnalysis + 1 ? 5 : 6; // E or F
+                    } else if (update.col === columnMapping.blueAnalysis + 1 || update.col === columnMapping.blueSignature + 1) {
+                        targetSheetId = update.guruSheetIds.blue;
+                        targetCol = update.col === columnMapping.blueAnalysis + 1 ? 5 : 6; // E or F
+                    } else if (update.col === columnMapping.greenAnalysis + 1 || update.col === columnMapping.greenSignature + 1) {
+                        targetSheetId = update.guruSheetIds.green;
+                        targetCol = update.col === columnMapping.greenAnalysis + 1 ? 5 : 6; // E or F
+                    } else if (update.col <= 3) {
+                        // Base columns (A:C) go to Red Gurus sheet
+                        targetSheetId = update.guruSheetIds.red;
+                        targetCol = update.col;
+                    }
+                }
+
                 // Use the explicitly specified value type
                 let userEnteredValue;
                 
@@ -150,9 +281,9 @@ export class GoogleSheetsAPI {
                 return {
                     updateCells: {
                         start: {
-                            sheetId: update.sheetId, // Use the actual sheet ID from the request
+                            sheetId: targetSheetId,
                             rowIndex: update.row - 1,
-                            columnIndex: update.col - 1
+                            columnIndex: targetCol - 1
                         },
                         rows: [{
                             values: [{
