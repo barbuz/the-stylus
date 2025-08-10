@@ -568,7 +568,7 @@ export class GuruAnalysisInterface {
             
             // Handle discrepancy values specially
             if (outcomeValue === 'discrepancy') {
-                analysisElement.innerHTML = this.buildDiscrepancyDisplay(currentRow);
+                analysisElement.textContent = 'Discrepancy';
                 analysisElement.className = 'scoring-value discrepancy';
                 // Don't highlight any button for discrepancy
             } else if (outcomeValue === 'incomplete') {
@@ -581,6 +581,8 @@ export class GuruAnalysisInterface {
                 if (!isNaN(numValue)) {
                     analysisValue = numValue;
                     analysisElement.className = 'scoring-value';
+                    
+                    // No current guru analysis yet, show simple display
                     if (numValue === 1.0) {
                         analysisElement.textContent = 'Win (1.0)';
                     } else if (numValue === 0.5) {
@@ -599,6 +601,13 @@ export class GuruAnalysisInterface {
         } else {
             analysisElement.textContent = 'Not set';
             analysisElement.className = 'scoring-value';
+        }
+
+        // Check if current guru has provided an analysis - independent of outcome value
+        const currentGuruAnalysis = this.getCurrentGuruAnalysis(currentRow);
+        if (currentGuruAnalysis && currentGuruAnalysis.trim() !== '') {
+            // Show current guru's analysis with other gurus' analyses
+            analysisElement.innerHTML = this.buildAnalysisDisplayWithOthers(currentRow, currentRow.outcomeValue || '');
         }
 
         // Check if this row is claimed by another guru
@@ -1105,6 +1114,83 @@ export class GuruAnalysisInterface {
         }
         
         return html;
+    }
+
+    buildAnalysisDisplayWithOthers(currentRow, outcomeValue = '') {
+        // Get current guru's analysis
+        const currentGuruAnalysis = this.getCurrentGuruAnalysis(currentRow);
+        
+        // Collect all guru analyses (including current guru)
+        const allAnalyses = [];
+        
+        // Add current guru's analysis first
+        if (currentGuruAnalysis && currentGuruAnalysis.trim() !== '') {
+            const currentGuruName = this.currentGuruColor.charAt(0).toUpperCase() + this.currentGuruColor.slice(1);
+            allAnalyses.push({ 
+                name: currentGuruName, 
+                value: currentGuruAnalysis, 
+                isCurrent: true 
+            });
+        }
+        
+        // Add other guru analyses
+        if (this.currentGuruColor !== 'red' && currentRow.redAnalysis && currentRow.redAnalysis.trim() !== '') {
+            allAnalyses.push({ name: 'Red', value: currentRow.redAnalysis, isCurrent: false });
+        }
+        if (this.currentGuruColor !== 'blue' && currentRow.blueAnalysis && currentRow.blueAnalysis.trim() !== '') {
+            allAnalyses.push({ name: 'Blue', value: currentRow.blueAnalysis, isCurrent: false });
+        }
+        if (this.currentGuruColor !== 'green' && currentRow.greenAnalysis && currentRow.greenAnalysis.trim() !== '') {
+            allAnalyses.push({ name: 'Green', value: currentRow.greenAnalysis, isCurrent: false });
+        }
+        
+        // Build the simple list HTML
+        let html = '<div class="analysis-list">';
+        
+        // Show outcome header for all cases
+        if (outcomeValue && outcomeValue.trim() !== '') {
+            const outcomeDisplay = this.getOutcomeDisplayName(outcomeValue);
+            html += `<div class="outcome-header">${outcomeDisplay}</div>`;
+        }
+        
+        html += '<ul class="guru-analyses-list">';
+        
+        allAnalyses.forEach(analysis => {
+            const displayValue = this.formatAnalysisValue(analysis.value);
+            const cssClass = this.getAnalysisClass(analysis.value);
+            const prefix = analysis.isCurrent ? 'You' : analysis.name;
+            
+            html += `<li class="guru-analysis-item">
+                <span class="guru-analysis-label">${prefix}:</span> 
+                <span class="analysis-result ${cssClass}">${displayValue}</span>
+            </li>`;
+        });
+        
+        html += '</ul></div>';
+        
+        return html;
+    }
+    
+    getOutcomeDisplayName(outcomeValue) {
+        if (!outcomeValue || outcomeValue.trim() === '') return '';
+        
+        const value = outcomeValue.toLowerCase().trim();
+        
+        // Handle special outcome values
+        if (value === 'discrepancy') return 'Discrepancy';
+        if (value === 'incomplete') return 'Incomplete';
+        
+        // Try to parse as numeric value for consistent display
+        const numValue = parseFloat(outcomeValue);
+        if (!isNaN(numValue)) {
+            if (numValue === 1.0) return 'Win';
+            if (numValue === 0.5) return 'Tie';
+            if (numValue === 0.0) return 'Loss';
+            return `Custom (${numValue})`;
+        }
+        
+        // Return the original value with proper capitalization
+        return outcomeValue.charAt(0).toUpperCase() + outcomeValue.slice(1).toLowerCase();
     }
     
     getAnalysisClass(value) {

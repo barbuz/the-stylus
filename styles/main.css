@@ -806,10 +806,59 @@ section h2, .login-section h2 {
     border: 2px solid #fdcb6e;
 }
 
-.discrepancy-header {
+.discrepancy-header,
+.outcome-header {
     font-weight: bold;
     margin-bottom: 0;
     font-size: 1.1em;
+}
+
+/* Analysis content with current + other gurus */
+.analysis-content {
+    color: #2c3e50;
+    background: #f8f9fa;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 2px solid #dee2e6;
+    margin-bottom: 8px;
+}
+
+.current-analysis {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 2px solid;
+    font-weight: 600;
+    min-height: 60px;
+    text-align: center;
+    margin-bottom: 8px;
+}
+
+.current-analysis.win {
+    background: #28a745;
+    color: white;
+    border-color: #155724;
+}
+
+.current-analysis.tie {
+    background: #ffc107;
+    color: #212529;
+    border-color: #856404;
+}
+
+.current-analysis.loss {
+    background: #dc3545;
+    color: white;
+    border-color: #721c24;
+}
+
+.current-analysis.other {
+    background: #007bff;
+    color: white;
+    border-color: #0056b3;
 }
 
 .other-analyses {
@@ -880,6 +929,52 @@ section h2, .login-section h2 {
     .other-analysis {
         min-width: auto;
     }
+}
+
+/* New list-style analysis display */
+.analysis-list {
+    padding: 8px 0;
+}
+
+.guru-analyses-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    font-size: 0.95em;
+}
+
+.guru-analysis-item {
+    display: flex;
+    align-items: center;
+    padding: 4px 0;
+    margin: 2px 0;
+}
+
+.guru-analysis-label {
+    font-weight: 700;
+    margin-right: 8px;
+    min-width: 45px;
+    color: #495057;
+}
+
+.analysis-result {
+    font-weight: 600;
+}
+
+.analysis-result.win {
+    color: #28a745;
+}
+
+.analysis-result.tie {
+    color: #ffc107;
+}
+
+.analysis-result.loss {
+    color: #dc3545;
+}
+
+.analysis-result.other {
+    color: #6c757d;
 }
 
 .scoring-buttons {
