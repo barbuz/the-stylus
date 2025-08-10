@@ -318,6 +318,160 @@ export class GoogleSheetsAPI {
         }
     }
 
+    async checkedUpdateSheetData(sheetId, updates) {
+        try {
+            if (!this.authManager.isLoggedIn()) {
+                throw new Error('User not authenticated');
+            }
+
+            console.log('🔒 Performing checked update:', {
+                spreadsheetId: sheetId,
+                updates: updates.updates.map(u => ({
+                    sheetId: u.sheetId,
+                    row: u.row,
+                    col: u.col,
+                    value: u.value,
+                    expectedValue: u.expectedValue,
+                    valueType: u.valueType || 'auto-detected'
+                }))
+            });
+
+            // First, get current values to verify they match expected values
+            const valuesToCheck = [];
+            for (const update of updates.updates) {
+                let targetSheetId = update.sheetId;
+                let targetCol = update.col;
+                let targetRow = update.row;
+
+                // Handle merged guru sheet updates by routing to appropriate individual sheet
+                if (update.isMergedGuruUpdate) {
+                    const columnMapping = this.getMergedGuruColumnMapping();
+                    
+                    if (update.col === columnMapping.redAnalysis + 1 || update.col === columnMapping.redSignature + 1) {
+                        targetSheetId = update.guruSheetIds.red;
+                        targetCol = update.col === columnMapping.redAnalysis + 1 ? 5 : 6; // E or F
+                    } else if (update.col === columnMapping.blueAnalysis + 1 || update.col === columnMapping.blueSignature + 1) {
+                        targetSheetId = update.guruSheetIds.blue;
+                        targetCol = update.col === columnMapping.blueAnalysis + 1 ? 5 : 6; // E or F
+                    } else if (update.col === columnMapping.greenAnalysis + 1 || update.col === columnMapping.greenSignature + 1) {
+                        targetSheetId = update.guruSheetIds.green;
+                        targetCol = update.col === columnMapping.greenAnalysis + 1 ? 5 : 6; // E or F
+                    } else if (update.col <= 3) {
+                        // Base columns (A:C) go to Red Gurus sheet
+                        targetSheetId = update.guruSheetIds.red;
+                    }
+                }
+
+                valuesToCheck.push({
+                    originalUpdate: update,
+                    targetSheetId,
+                    targetRow,
+                    targetCol
+                });
+            }
+
+            // Get current values from sheets to check against expected values
+            const checkResults = [];
+            for (const check of valuesToCheck) {
+                // Get the sheet name for this sheetId
+                const metadata = await this.getSheetMetadata(sheetId);
+                const targetSheet = metadata.sheets.find(s => s.sheetId === check.targetSheetId);
+                
+                if (!targetSheet) {
+                    throw new Error(`Target sheet with ID ${check.targetSheetId} not found`);
+                }
+
+                // Convert column and row to A1 notation
+                const columnLetter = String.fromCharCode(65 + check.targetCol - 1); // A=65
+                const cellRange = `'${targetSheet.title}'!${columnLetter}${check.targetRow}`;
+
+                const response = await gapi.client.sheets.spreadsheets.values.get({
+                    spreadsheetId: sheetId,
+                    range: cellRange,
+                });
+
+                const currentValue = response.result.values && response.result.values[0] && response.result.values[0][0] 
+                    ? response.result.values[0][0].toString() 
+                    : '';
+
+                const expectedValue = check.originalUpdate.expectedValue || '';
+
+                checkResults.push({
+                    update: check.originalUpdate,
+                    currentValue,
+                    expectedValue,
+                    matches: currentValue === expectedValue,
+                    targetSheetId: check.targetSheetId,
+                    targetCol: check.targetCol,
+                    targetRow: check.targetRow
+                });
+            }
+
+            // Check if all values match expectations
+            const failedChecks = checkResults.filter(result => !result.matches);
+            if (failedChecks.length > 0) {
+                const errorDetails = failedChecks.map(check => 
+                    `Cell (${check.targetRow}, ${check.targetCol}): expected "${check.expectedValue}", found "${check.currentValue}"`
+                ).join('; ');
+                
+                throw new Error(`Checked update failed - values changed: ${errorDetails}`);
+            }
+
+            // All checks passed, proceed with the update using the existing updateSheetData logic
+            const updateRequests = checkResults.map(result => {
+                const update = result.update;
+                
+                // Determine userEnteredValue based on value type
+                let userEnteredValue;
+                if (update.valueType === 'number') {
+                    userEnteredValue = { numberValue: parseFloat(update.value) };
+                } else if (update.valueType === 'boolean') {
+                    userEnteredValue = { boolValue: update.value === 'true' || update.value === true };
+                } else {
+                    userEnteredValue = { stringValue: update.value.toString() };
+                }
+
+                return {
+                    updateCells: {
+                        start: {
+                            sheetId: result.targetSheetId,
+                            rowIndex: result.targetRow - 1,
+                            columnIndex: result.targetCol - 1
+                        },
+                        rows: [{
+                            values: [{
+                                userEnteredValue: userEnteredValue
+                            }]
+                        }],
+                        fields: 'userEnteredValue'
+                    }
+                };
+            });
+
+            const response = await gapi.client.sheets.spreadsheets.batchUpdate({
+                spreadsheetId: sheetId,
+                resource: {
+                    requests: updateRequests
+                }
+            });
+
+            console.log('✅ Checked sheet update successful:', {
+                updatedCells: updates.updates.length,
+                responseReplies: response.result.replies?.length || 0
+            });
+
+            return {
+                success: true,
+                updatedCells: updates.updates.length,
+                response: response.result
+            };
+
+        } catch (error) {
+            console.error('Checked API Error:', error);
+            throw new Error(error.message || 'Failed to perform checked update');
+        }
+    }
+
     async getSheetMetadata(sheetId) {
         try {
             if (!this.authManager.isLoggedIn()) {

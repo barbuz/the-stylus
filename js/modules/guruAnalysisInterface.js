@@ -387,8 +387,9 @@ export class GuruAnalysisInterface {
         for (let i = 0; i < this.allRows.length; i++) {
             const row = this.allRows[i];
             
-            // Check for empty analysis
-            if (!row.currentAnalysis || row.currentAnalysis.trim() === '') {
+            // Check for empty analysis using the helper method
+            const currentAnalysis = this.getCurrentGuruAnalysis(row);
+            if (!currentAnalysis || currentAnalysis.trim() === '') {
                 return false;
             }
             
@@ -494,6 +495,20 @@ export class GuruAnalysisInterface {
         }
     }
 
+    getCurrentRowSignature(row) {
+        // Get the current row's signature for the current guru color
+        switch (this.currentGuruColor) {
+            case 'red':
+                return row.redSignature || '';
+            case 'blue':
+                return row.blueSignature || '';
+            case 'green':
+                return row.greenSignature || '';
+            default:
+                return '';
+        }
+    }
+
     rowHasCurrentGuruSignature(row, currentSignature) {
         if (!currentSignature.trim()) {
             return false;
@@ -586,10 +601,82 @@ export class GuruAnalysisInterface {
             analysisElement.className = 'scoring-value';
         }
 
-        // Highlight the appropriate button based on current guru analysis value
-        const currentAnalysis = this.getCurrentGuruAnalysis(currentRow);
-        const currentAnalysisValue = currentAnalysis ? parseFloat(currentAnalysis) : null;
-        this.highlightCurrentAnalysisButton(currentAnalysisValue);
+        // Check if this row is claimed by another guru
+        const currentRowSignature = this.getCurrentRowSignature(currentRow);
+        let userGuruSignature = '';
+        if (this.authManager && this.authManager.guruSignature) {
+            userGuruSignature = this.authManager.guruSignature;
+        } else {
+            userGuruSignature = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE) || '';
+        }
+
+        const isRowClaimedByAnotherGuru = currentRowSignature && currentRowSignature.trim() !== '' && currentRowSignature !== userGuruSignature;
+        const isRowUnclaimed = !currentRowSignature || currentRowSignature.trim() === '';
+        const isRowOwnedByCurrentUser = currentRowSignature === userGuruSignature;
+
+        // Show/hide scoring buttons based on row ownership
+        const scoringButtons = document.querySelectorAll('.scoring-btn');
+        const claimedMessage = document.getElementById('claimed-message');
+        const claimButton = document.getElementById('claim-button');
+        
+        if (isRowClaimedByAnotherGuru) {
+            // Hide scoring buttons and claim button, show claimed message
+            scoringButtons.forEach(btn => btn.style.display = 'none');
+            if (claimButton) claimButton.style.display = 'none';
+            
+            // Get the current analysis value for the claimed row
+            const currentAnalysis = this.getCurrentGuruAnalysis(currentRow);
+            const analysisText = currentAnalysis && currentAnalysis.trim() !== '' ? 
+                ` - Analysis: ${this.formatAnalysisValue(currentAnalysis)}` : '';
+            
+            if (claimedMessage) {
+                claimedMessage.style.display = 'block';
+                claimedMessage.textContent = `Claimed by ${currentRowSignature}${analysisText}`;
+            } else {
+                // Create claimed message element if it doesn't exist
+                const newClaimedMessage = document.createElement('div');
+                newClaimedMessage.id = 'claimed-message';
+                newClaimedMessage.className = 'claimed-message';
+                newClaimedMessage.textContent = `Claimed by ${currentRowSignature}${analysisText}`;
+                
+                // Insert after the scoring buttons container
+                const scoringContainer = document.querySelector('.scoring-buttons');
+                if (scoringContainer) {
+                    scoringContainer.insertAdjacentElement('afterend', newClaimedMessage);
+                }
+            }
+        } else if (isRowUnclaimed) {
+            // Hide scoring buttons and claimed message, show claim button
+            scoringButtons.forEach(btn => btn.style.display = 'none');
+            if (claimedMessage) claimedMessage.style.display = 'none';
+            
+            if (claimButton) {
+                claimButton.style.display = 'block';
+            } else {
+                // Create claim button if it doesn't exist
+                const newClaimButton = document.createElement('button');
+                newClaimButton.id = 'claim-button';
+                newClaimButton.className = 'claim-btn primary-btn';
+                newClaimButton.textContent = 'Claim Match';
+                newClaimButton.addEventListener('click', () => this.claimRow());
+                
+                // Insert after the scoring buttons container
+                const scoringContainer = document.querySelector('.scoring-buttons');
+                if (scoringContainer) {
+                    scoringContainer.insertAdjacentElement('afterend', newClaimButton);
+                }
+            }
+        } else if (isRowOwnedByCurrentUser) {
+            // Show scoring buttons, hide claimed message and claim button
+            scoringButtons.forEach(btn => btn.style.display = '');
+            if (claimedMessage) claimedMessage.style.display = 'none';
+            if (claimButton) claimButton.style.display = 'none';
+            
+            // Highlight the appropriate button based on current guru analysis value
+            const currentAnalysis = this.getCurrentGuruAnalysis(currentRow);
+            const currentAnalysisValue = currentAnalysis ? parseFloat(currentAnalysis) : null;
+            this.highlightCurrentAnalysisButton(currentAnalysisValue);
+        }
 
         // Update navigation buttons
         document.getElementById('prev-btn').disabled = this.currentRowIndex === 0;
@@ -800,6 +887,98 @@ export class GuruAnalysisInterface {
         if (value === 0.5) return 'Tie';
         if (value === 0.0) return 'Loss';
         return value.toString();
+    }
+
+    async claimRow() {
+        if (this.currentRowIndex >= this.allRows.length) return;
+
+        const currentRow = this.allRows[this.currentRowIndex];
+        
+        // Get user's guru signature
+        let userGuruSignature = '';
+        if (this.authManager && this.authManager.guruSignature) {
+            userGuruSignature = this.authManager.guruSignature;
+        } else {
+            userGuruSignature = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE) || '';
+        }
+
+        if (!userGuruSignature.trim()) {
+            this.uiController.showStatus('No guru signature found. Please set your signature first.', 'error');
+            return;
+        }
+
+        // Show spinner on claim button
+        const claimButton = document.getElementById('claim-button');
+        const originalButtonText = claimButton ? claimButton.textContent : 'Claim Match';
+        if (claimButton) {
+            claimButton.disabled = true;
+            claimButton.innerHTML = '<span class="spinner"></span> Claiming...';
+        }
+
+        try {
+            this.uiController.showStatus('Claiming match...', 'loading');
+
+            console.log('🎯 Claiming match:', {
+                sheetTitle: currentRow.sheetTitle,
+                originalRowIndex: currentRow.originalRowIndex,
+                filteredRowIndex: currentRow.rowIndex,
+                signatureColumn: currentRow.currentSignatureColIndex,
+                guruColor: this.currentGuruColor,
+                userSignature: userGuruSignature
+            });
+
+            // Use checked update to atomically claim the match only if signature is still empty
+            const updates = {
+                updates: [{
+                    sheetId: currentRow.sheetId,
+                    row: currentRow.originalRowIndex + 1, // +1 because sheets are 1-indexed
+                    col: currentRow.currentSignatureColIndex + 1, // +1 because sheets are 1-indexed
+                    value: userGuruSignature,
+                    expectedValue: '', // Only update if current value is empty
+                    valueType: 'string',
+                    isMergedGuruUpdate: true,
+                    guruSheetIds: this.currentData.sheets.find(s => s.sheetTitle === 'Merged Gurus')?.guruSheetIds
+                }]
+            };
+
+            await this.sheetsAPI.checkedUpdateSheetData(this.currentData.sheetId, updates);
+            
+            // Update local data with the new signature
+            switch (this.currentGuruColor) {
+                case 'red':
+                    currentRow.redSignature = userGuruSignature;
+                    break;
+                case 'blue':
+                    currentRow.blueSignature = userGuruSignature;
+                    break;
+                case 'green':
+                    currentRow.greenSignature = userGuruSignature;
+                    break;
+            }
+            
+            this.uiController.showStatus('Match claimed successfully!', 'success');
+            
+            // Refresh the display to show scoring buttons now that the match is claimed
+            await this.showCurrentRow();
+            
+        } catch (error) {
+            console.error('Error claiming match:', error);
+            
+            // Reset claim button on error
+            if (claimButton) {
+                claimButton.disabled = false;
+                claimButton.textContent = originalButtonText;
+            }
+            
+            // Check if this was a race condition (someone else claimed it)
+            if (error.message.includes('values changed')) {
+                this.uiController.showStatus('Match was already claimed by someone else', 'error');
+                // Refresh the display to show the updated state
+                await this.reloadAllDataInBackground();
+            } else {
+                this.uiController.showStatus(`Error claiming match: ${error.message}`, 'error');
+            }
+        }
     }
 
     async reloadAllData() {

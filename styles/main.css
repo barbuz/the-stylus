@@ -606,6 +606,18 @@ section h2, .login-section h2 {
     margin-right: 10px;
 }
 
+/* Inline spinner for buttons */
+.spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid #ffffff40;
+    border-top: 2px solid #ffffff;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-right: 6px;
+}
+
 /* Simple app loading section under header */
 .app-loading {
     display: flex;
