@@ -307,10 +307,12 @@ export class GuruAnalysisInterface {
 
             const player1 = row[player1ColIndex] || '';
             const player2 = row[player2ColIndex] || '';
-            const currentAnalysis = row[currentAnalysisColIndex] || '';
             const redAnalysis = redAnalysisColIndex !== -1 ? row[redAnalysisColIndex] || '' : '';
             const blueAnalysis = blueAnalysisColIndex !== -1 ? row[blueAnalysisColIndex] || '' : '';
             const greenAnalysis = greenAnalysisColIndex !== -1 ? row[greenAnalysisColIndex] || '' : '';
+            const redSignature = redSignatureColIndex !== -1 ? row[redSignatureColIndex] || '' : '';
+            const blueSignature = blueSignatureColIndex !== -1 ? row[blueSignatureColIndex] || '' : '';
+            const greenSignature = greenSignatureColIndex !== -1 ? row[greenSignatureColIndex] || '' : '';
 
             // Calculate outcome based on all guru analyses
             const outcomeValue = this.calculateOutcomeFromAnalyses(redAnalysis, blueAnalysis, greenAnalysis);
@@ -324,11 +326,13 @@ export class GuruAnalysisInterface {
                     rowIndex,
                     player1: player1.trim(),
                     player2: player2.trim(),
-                    currentAnalysis: currentAnalysis.toString().trim(),
                     outcomeValue: outcomeValue,
                     redAnalysis: redAnalysis.toString().trim(),
                     blueAnalysis: blueAnalysis.toString().trim(),
                     greenAnalysis: greenAnalysis.toString().trim(),
+                    redSignature: redSignature.toString().trim(),
+                    blueSignature: blueSignature.toString().trim(),
+                    greenSignature: greenSignature.toString().trim(),
                     currentAnalysisColIndex,
                     currentSignatureColIndex,
                     originalRowIndex: originalRowIndex // Use the original row index from unfiltered data
@@ -398,44 +402,128 @@ export class GuruAnalysisInterface {
     }
 
     findFirstEmptyAnalysis(startFromIndex = 0) {
-        // First, find the first row where currentAnalysis is empty or whitespace, starting from the given index
+        // Get the current guru signature for filtering
+        let currentSignature = '';
+        if (this.authManager && this.authManager.guruSignature) {
+            currentSignature = this.authManager.guruSignature;
+        } else {
+            currentSignature = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE) || '';
+        }
+
+        // Phase 1: Look for incomplete/discrepant rows that belong to current guru (have current guru's signature)
+        
+        // First, find rows with current guru's signature that need analysis, starting from the given index
         for (let i = startFromIndex; i < this.allRows.length; i++) {
             const row = this.allRows[i];
-            if (!row.currentAnalysis || row.currentAnalysis.trim() === '') {
-                return i;
-            }
-        }
-        
-        // If no empty analysis found from startFromIndex to end, loop back and search from beginning to startFromIndex
-        if (startFromIndex > 0) {
-            for (let i = 0; i < startFromIndex; i++) {
-                const row = this.allRows[i];
-                if (!row.currentAnalysis || row.currentAnalysis.trim() === '') {
+            
+            // Check if this row has the current guru's signature
+            if (this.rowHasCurrentGuruSignature(row, currentSignature)) {
+                // Check for empty analysis
+                const currentAnalysis = this.getCurrentGuruAnalysis(row);
+                if (!currentAnalysis || currentAnalysis.trim() === '') {
                     return i;
                 }
-            }
-        }
-        
-        // If no empty analysis found, look for the first discrepancy starting from the given index
-        for (let i = startFromIndex; i < this.allRows.length; i++) {
-            const row = this.allRows[i];
-            if (row.outcomeValue && row.outcomeValue.toLowerCase().trim() === 'discrepancy') {
-                return i;
-            }
-        }
-        
-        // If no discrepancy found from startFromIndex to end, loop back and search from beginning to startFromIndex
-        if (startFromIndex > 0) {
-            for (let i = 0; i < startFromIndex; i++) {
-                const row = this.allRows[i];
+                
+                // Check for discrepancies
                 if (row.outcomeValue && row.outcomeValue.toLowerCase().trim() === 'discrepancy') {
                     return i;
                 }
             }
         }
         
-        // If no empty analysis or discrepancies found, return the start index or 0
+        // If no incomplete analysis found from startFromIndex to end, loop back and search from beginning to startFromIndex
+        if (startFromIndex > 0) {
+            for (let i = 0; i < startFromIndex; i++) {
+                const row = this.allRows[i];
+                
+                // Check if this row has the current guru's signature
+                if (this.rowHasCurrentGuruSignature(row, currentSignature)) {
+                    // Check for empty analysis
+                    const currentAnalysis = this.getCurrentGuruAnalysis(row);
+                    if (!currentAnalysis || currentAnalysis.trim() === '') {
+                        return i;
+                    }
+                    
+                    // Check for discrepancies
+                    if (row.outcomeValue && row.outcomeValue.toLowerCase().trim() === 'discrepancy') {
+                        return i;
+                    }
+                }
+            }
+        }
+
+        // Phase 2: If no rows with current guru signature need analysis, look for rows with empty signatures
+        
+        // First, from startFromIndex to end
+        for (let i = startFromIndex; i < this.allRows.length; i++) {
+            const row = this.allRows[i];
+            
+            // Check if this row has empty guru signature (unclaimed)
+            if (this.rowHasEmptySignature(row)) {
+                return i;
+            }
+        }
+        
+        // If no empty signature found from startFromIndex to end, loop back and search from beginning to startFromIndex
+        if (startFromIndex > 0) {
+            for (let i = 0; i < startFromIndex; i++) {
+                const row = this.allRows[i];
+                
+                // Check if this row has empty guru signature (unclaimed)
+                if (this.rowHasEmptySignature(row)) {
+                    return i;
+                }
+            }
+        }
+        
+        // If no empty signature or analysis found, return the start index or 0
         return startFromIndex === 0 ? 0 : startFromIndex;
+    }
+
+    getCurrentGuruAnalysis(row) {
+        // Get the current guru's analysis value based on guru color
+        switch (this.currentGuruColor) {
+            case 'red':
+                return row.redAnalysis || '';
+            case 'blue':
+                return row.blueAnalysis || '';
+            case 'green':
+                return row.greenAnalysis || '';
+            default:
+                return '';
+        }
+    }
+
+    rowHasCurrentGuruSignature(row, currentSignature) {
+        if (!currentSignature.trim()) {
+            return false;
+        }
+        
+        // Check the current guru's signature column based on guru color
+        switch (this.currentGuruColor) {
+            case 'red':
+                return row.redSignature === currentSignature;
+            case 'blue':
+                return row.blueSignature === currentSignature;
+            case 'green':
+                return row.greenSignature === currentSignature;
+            default:
+                return false;
+        }
+    }
+
+    rowHasEmptySignature(row) {
+        // Check if the current guru's signature column is empty
+        switch (this.currentGuruColor) {
+            case 'red':
+                return !row.redSignature || row.redSignature.trim() === '';
+            case 'blue':
+                return !row.blueSignature || row.blueSignature.trim() === '';
+            case 'green':
+                return !row.greenSignature || row.greenSignature.trim() === '';
+            default:
+                return true;
+        }
     }
 
     async showCurrentRow() {
@@ -499,7 +587,8 @@ export class GuruAnalysisInterface {
         }
 
         // Highlight the appropriate button based on current guru analysis value
-        const currentAnalysisValue = currentRow.currentAnalysis ? parseFloat(currentRow.currentAnalysis) : null;
+        const currentAnalysis = this.getCurrentGuruAnalysis(currentRow);
+        const currentAnalysisValue = currentAnalysis ? parseFloat(currentAnalysis) : null;
         this.highlightCurrentAnalysisButton(currentAnalysisValue);
 
         // Update navigation buttons
@@ -659,9 +748,6 @@ export class GuruAnalysisInterface {
             };
 
             await this.sheetsAPI.updateSheetData(this.currentData.sheetId, updates);
-            
-            // Update local data - update the current guru's analysis
-            currentRow.currentAnalysis = value.toString();
             
             // Update the specific guru analysis in the local data
             switch (this.currentGuruColor) {
