@@ -11,10 +11,6 @@ Always reference these instructions first and fallback to search or bash command
 - **Validate JavaScript syntax:**
   - `node -c js/main.js` -- validates main entry point syntax (instant)
   - `for f in $(find js -name "*.js"); do node -c "$f"; done` -- validates all JS files (takes 2-3 seconds)
-- **Run npm scripts:**
-  - `npm run dev` -- prints "Open index.html in your browser" (instant)
-  - `npm run build` -- prints "No build required - static HTML/CSS/JS" (instant)
-  - `npm run test` -- prints "Test script placeholder" (instant)
 
 ## Application Architecture
 - **Pure client-side application** - no build process, no server dependencies
