@@ -15,11 +15,77 @@ export class GuruAnalysisInterface {
         this.allRows = [];
         this.currentRowIndex = 0;
         this.currentSheetIndex = 0;
+        this.currentGuruColor = null;
         this.bindEvents();
         
         // Handle window resize for mobile/desktop layout changes
         this.handleResize = this.handleResize.bind(this);
         window.addEventListener('resize', this.handleResize);
+    }
+
+    determineGuruColorFromSheet(sheetData) {
+        // Get the current guru signature
+        let currentSignature = '';
+        if (this.authManager && this.authManager.guruSignature) {
+            currentSignature = this.authManager.guruSignature;
+        } else {
+            currentSignature = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE) || '';
+        }
+
+        if (!currentSignature.trim()) {
+            console.log('No guru signature found, defaulting to red');
+            return 'red';
+        }
+
+        // Find the merged guru sheet
+        const mergedGuruSheet = sheetData.sheets?.find(sheet => 
+            sheet.sheetTitle === 'Merged Gurus'
+        );
+
+        if (!mergedGuruSheet || !mergedGuruSheet.values || mergedGuruSheet.values.length < 2) {
+            console.log('No merged guru sheet found, defaulting to red');
+            return 'red';
+        }
+
+        const headerRow = mergedGuruSheet.values[0];
+        
+        // Find signature columns
+        const redSignatureColIndex = this.findColumnIndex(headerRow, ['Red Signature']);
+        const blueSignatureColIndex = this.findColumnIndex(headerRow, ['Blue Signature']);
+        const greenSignatureColIndex = this.findColumnIndex(headerRow, ['Green Signature']);
+
+        console.log('Signature column indices:', {
+            red: redSignatureColIndex,
+            blue: blueSignatureColIndex,
+            green: greenSignatureColIndex,
+            currentSignature
+        });
+
+        // Check each signature column for the current guru's signature
+        for (let rowIndex = 1; rowIndex < mergedGuruSheet.values.length; rowIndex++) {
+            const row = mergedGuruSheet.values[rowIndex];
+            
+            // Check red signature column
+            if (redSignatureColIndex !== -1 && row[redSignatureColIndex] === currentSignature) {
+                console.log(`Found guru signature "${currentSignature}" in Red column at row ${rowIndex}`);
+                return 'red';
+            }
+            
+            // Check blue signature column
+            if (blueSignatureColIndex !== -1 && row[blueSignatureColIndex] === currentSignature) {
+                console.log(`Found guru signature "${currentSignature}" in Blue column at row ${rowIndex}`);
+                return 'blue';
+            }
+            
+            // Check green signature column
+            if (greenSignatureColIndex !== -1 && row[greenSignatureColIndex] === currentSignature) {
+                console.log(`Found guru signature "${currentSignature}" in Green column at row ${rowIndex}`);
+                return 'green';
+            }
+        }
+
+        console.log(`Guru signature "${currentSignature}" not found in any column`);
+        throw new Error(`Guru signature "${currentSignature}" not found in any analysis column. Please check that you have matches assigned to analyze.`);
     }
 
     bindEvents() {
@@ -47,6 +113,16 @@ export class GuruAnalysisInterface {
 
     async loadData(sheetData) {
         this.currentData = sheetData;
+        
+        try {
+            // Determine the current guru color from the actual sheet data
+            this.currentGuruColor = this.determineGuruColorFromSheet(sheetData);
+            console.log(`Determined guru color: ${this.currentGuruColor}`);
+        } catch (error) {
+            console.error('Error determining guru color:', error);
+            this.showGuruSignatureError(error.message);
+            return;
+        }
         
         this.allRows = [];
         this.currentRowIndex = 0;
@@ -164,20 +240,61 @@ export class GuruAnalysisInterface {
     processSheet(sheet, sheetIndex) {
         const headerRow = sheet.values[0];
         
-        // Find required columns
-        const player1ColIndex = this.findColumnIndex(headerRow, ['Player 1 (On the Play)', 'Player 1', 'Player1']);
-        const player2ColIndex = this.findColumnIndex(headerRow, ['Player 2 (On the Draw)', 'Player 2', 'Player2']);
-        const guruAnalysisColIndex = this.findColumnIndex(headerRow, ['Guru Analysis', 'Analysis', 'Guru']);
-        const outcomeColIndex = this.findColumnIndex(headerRow, ['Outcome']);
-        const guruSignatureColIndex = this.findColumnIndex(headerRow, ['Guru Signature', 'Signature', 'Guru']);
+        // Handle different sheet types
+        if (sheet.sheetTitle === 'Merged Gurus') {
+            // For merged guru sheet, use the merged column structure
+            this.processMergedGuruSheet(sheet, sheetIndex);
+        } else {
+            // For deck notes or other sheets, skip processing
+            console.log(`Skipping sheet "${sheet.sheetTitle}" - not a guru analysis sheet`);
+            return;
+        }
+    }
+
+    processMergedGuruSheet(sheet, sheetIndex) {
+        const headerRow = sheet.values[0];
         
-        // Find other guru analysis columns (Red, Blue, Green Analysis)
+        // Find required columns in merged sheet structure
+        // Expected columns: ID, Player1, Player2, Red Analysis, Red Signature, Blue Analysis, Blue Signature, Green Analysis, Green Signature
+        const player1ColIndex = this.findColumnIndex(headerRow, ['Player 1', 'Player1']);
+        const player2ColIndex = this.findColumnIndex(headerRow, ['Player 2', 'Player2']);
+        
+        // Find guru analysis columns
         const redAnalysisColIndex = this.findColumnIndex(headerRow, ['Red Analysis']);
         const blueAnalysisColIndex = this.findColumnIndex(headerRow, ['Blue Analysis']);
         const greenAnalysisColIndex = this.findColumnIndex(headerRow, ['Green Analysis']);
+        
+        // Find guru signature columns
+        const redSignatureColIndex = this.findColumnIndex(headerRow, ['Red Signature']);
+        const blueSignatureColIndex = this.findColumnIndex(headerRow, ['Blue Signature']);
+        const greenSignatureColIndex = this.findColumnIndex(headerRow, ['Green Signature']);
 
-        if (player1ColIndex === -1 || player2ColIndex === -1 || guruAnalysisColIndex === -1) {
-            console.log(`Skipping sheet "${sheet.sheetTitle}" - not a guru analysis sheet (missing required columns)`);
+        if (player1ColIndex === -1 || player2ColIndex === -1) {
+            console.log(`Skipping merged guru sheet - missing required player columns`);
+            return;
+        }
+
+        // Determine current guru's analysis column based on color
+        let currentAnalysisColIndex = -1;
+        let currentSignatureColIndex = -1;
+        
+        switch (this.currentGuruColor) {
+            case 'red':
+                currentAnalysisColIndex = redAnalysisColIndex;
+                currentSignatureColIndex = redSignatureColIndex;
+                break;
+            case 'blue':
+                currentAnalysisColIndex = blueAnalysisColIndex;
+                currentSignatureColIndex = blueSignatureColIndex;
+                break;
+            case 'green':
+                currentAnalysisColIndex = greenAnalysisColIndex;
+                currentSignatureColIndex = greenSignatureColIndex;
+                break;
+        }
+
+        if (currentAnalysisColIndex === -1) {
+            console.log(`Skipping merged guru sheet - ${this.currentGuruColor} analysis column not found`);
             return;
         }
 
@@ -190,11 +307,13 @@ export class GuruAnalysisInterface {
 
             const player1 = row[player1ColIndex] || '';
             const player2 = row[player2ColIndex] || '';
-            const currentAnalysis = row[guruAnalysisColIndex] || '';
-            const outcomeValue = outcomeColIndex !== -1 ? row[outcomeColIndex] || '' : '';
+            const currentAnalysis = row[currentAnalysisColIndex] || '';
             const redAnalysis = redAnalysisColIndex !== -1 ? row[redAnalysisColIndex] || '' : '';
             const blueAnalysis = blueAnalysisColIndex !== -1 ? row[blueAnalysisColIndex] || '' : '';
             const greenAnalysis = greenAnalysisColIndex !== -1 ? row[greenAnalysisColIndex] || '' : '';
+
+            // Calculate outcome based on all guru analyses
+            const outcomeValue = this.calculateOutcomeFromAnalyses(redAnalysis, blueAnalysis, greenAnalysis);
 
             // Only include rows that have player data
             if (player1.trim() || player2.trim()) {
@@ -206,12 +325,12 @@ export class GuruAnalysisInterface {
                     player1: player1.trim(),
                     player2: player2.trim(),
                     currentAnalysis: currentAnalysis.toString().trim(),
-                    outcomeValue: outcomeValue.toString().trim(),
+                    outcomeValue: outcomeValue,
                     redAnalysis: redAnalysis.toString().trim(),
                     blueAnalysis: blueAnalysis.toString().trim(),
                     greenAnalysis: greenAnalysis.toString().trim(),
-                    guruAnalysisColIndex,
-                    outcomeColIndex,
+                    currentAnalysisColIndex,
+                    currentSignatureColIndex,
                     originalRowIndex: originalRowIndex // Use the original row index from unfiltered data
                 });
             }
@@ -226,6 +345,37 @@ export class GuruAnalysisInterface {
             if (index !== -1) return index;
         }
         return -1;
+    }
+
+    calculateOutcomeFromAnalyses(redAnalysis, blueAnalysis, greenAnalysis) {
+        // Collect all guru analyses
+        const analyses = [];
+        
+        if (redAnalysis && redAnalysis.trim() !== '') {
+            analyses.push(redAnalysis.trim());
+        }
+        if (blueAnalysis && blueAnalysis.trim() !== '') {
+            analyses.push(blueAnalysis.trim());
+        }
+        if (greenAnalysis && greenAnalysis.trim() !== '') {
+            analyses.push(greenAnalysis.trim());
+        }
+        
+        // If any guru's analysis is missing, it's incomplete
+        const expectedAnalyses = 3; // Red, Blue, Green
+        if (analyses.length < expectedAnalyses) {
+            return 'Incomplete';
+        }
+        
+        // Check if all analyses are the same
+        const uniqueAnalyses = [...new Set(analyses)];
+        if (uniqueAnalyses.length === 1) {
+            // All analyses are the same, return that value
+            return uniqueAnalyses[0];
+        } else {
+            // There are differences, it's a discrepancy
+            return 'Discrepancy';
+        }
     }
 
     isAnalysisComplete() {
@@ -300,7 +450,7 @@ export class GuruAnalysisInterface {
         document.getElementById('current-row-info').textContent = 
             `Row ${this.currentRowIndex + 1} of ${this.allRows.length}`;
         document.getElementById('sheet-name-info').textContent = 
-            `Sheet: ${currentRow.sheetTitle}`;
+            `Guru: ${this.currentGuruColor.charAt(0).toUpperCase() + this.currentGuruColor.slice(1)}`;
 
         // Load card images for both players
         await this.loadPlayerCards('player1', currentRow.player1);
@@ -490,28 +640,48 @@ export class GuruAnalysisInterface {
                 sheetTitle: currentRow.sheetTitle,
                 originalRowIndex: currentRow.originalRowIndex,
                 filteredRowIndex: currentRow.rowIndex,
-                guruAnalysisColumn: currentRow.guruAnalysisColIndex,
+                currentAnalysisColumn: currentRow.currentAnalysisColIndex,
+                guruColor: this.currentGuruColor,
                 value: value
             });
 
-            // Update the sheet with the analysis value
+            // For merged guru sheet, we need to route to the correct individual sheet
             const updates = {
                 updates: [{
                     sheetId: currentRow.sheetId,
                     row: currentRow.originalRowIndex + 1, // +1 because sheets are 1-indexed
-                    col: currentRow.guruAnalysisColIndex + 1, // +1 because sheets are 1-indexed
+                    col: currentRow.currentAnalysisColIndex + 1, // +1 because sheets are 1-indexed
                     value: value.toString(),
-                    valueType: 'number' // Explicitly specify this is a number
+                    valueType: 'number', // Explicitly specify this is a number
+                    isMergedGuruUpdate: true,
+                    guruSheetIds: this.currentData.sheets.find(s => s.sheetTitle === 'Merged Gurus')?.guruSheetIds
                 }]
             };
 
             await this.sheetsAPI.updateSheetData(this.currentData.sheetId, updates);
             
-            // Update local data - no need to reload everything for just one analysis
+            // Update local data - update the current guru's analysis
             currentRow.currentAnalysis = value.toString();
             
+            // Update the specific guru analysis in the local data
+            switch (this.currentGuruColor) {
+                case 'red':
+                    currentRow.redAnalysis = value.toString();
+                    break;
+                case 'blue':
+                    currentRow.blueAnalysis = value.toString();
+                    break;
+                case 'green':
+                    currentRow.greenAnalysis = value.toString();
+                    break;
+            }
+            
             // Calculate and update the outcome value based on all guru analyses
-            const newOutcome = this.calculateOutcome(currentRow);
+            const newOutcome = this.calculateOutcomeFromAnalyses(
+                currentRow.redAnalysis, 
+                currentRow.blueAnalysis, 
+                currentRow.greenAnalysis
+            );
             currentRow.outcomeValue = newOutcome;
             
             // Update button highlighting immediately based on the new analysis value
@@ -539,43 +709,6 @@ export class GuruAnalysisInterface {
         }
     }
 
-    calculateOutcome(row) {
-        // Collect all guru analyses
-        const analyses = [];
-        
-        // Add current guru's analysis (the one we just set)
-        if (row.currentAnalysis && row.currentAnalysis.trim() !== '') {
-            analyses.push(row.currentAnalysis.trim());
-        }
-        
-        // Add other guru analyses if they exist
-        if (row.redAnalysis && row.redAnalysis.trim() !== '') {
-            analyses.push(row.redAnalysis.trim());
-        }
-        if (row.blueAnalysis && row.blueAnalysis.trim() !== '') {
-            analyses.push(row.blueAnalysis.trim());
-        }
-        if (row.greenAnalysis && row.greenAnalysis.trim() !== '') {
-            analyses.push(row.greenAnalysis.trim());
-        }
-        
-        // If any guru's analysis is missing, it's incomplete
-        const expectedAnalyses = 3; // Assuming we expect Red, Blue, Green analyses
-        if (analyses.length < expectedAnalyses) {
-            return 'Incomplete';
-        }
-        
-        // Check if all analyses are the same
-        const uniqueAnalyses = [...new Set(analyses)];
-        if (uniqueAnalyses.length === 1) {
-            // All analyses are the same, return that value
-            return uniqueAnalyses[0];
-        } else {
-            // There are differences, it's a discrepancy
-            return 'Discrepancy';
-        }
-    }
-
     getAnalysisLabel(value) {
         if (value === 1.0) return 'Win';
         if (value === 0.5) return 'Tie';
@@ -586,9 +719,7 @@ export class GuruAnalysisInterface {
     async reloadAllData() {
         try {
             // Get fresh data for the entire sheet
-            // Get the guru signature from localStorage as a fallback since we don't have direct access to GuruSignature instance
-            const guruSignature = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE);
-            const freshSheetData = await this.sheetsAPI.getSheetData(this.currentData.sheetId, guruSignature);
+            const freshSheetData = await this.sheetsAPI.getSheetData(this.currentData.sheetId);
             
             // Store the current row index to restore position
             const currentRowIndex = this.currentRowIndex;
@@ -613,9 +744,7 @@ export class GuruAnalysisInterface {
             console.log('🔄 Starting background data refresh...');
             
             // Get fresh data for the entire sheet
-            // Get the guru signature from localStorage as a fallback since we don't have direct access to GuruSignature instance
-            const guruSignature = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE);
-            const freshSheetData = await this.sheetsAPI.getSheetData(this.currentData.sheetId, guruSignature);
+            const freshSheetData = await this.sheetsAPI.getSheetData(this.currentData.sheetId);
             
             // Store the current row info to find it again after reload
             const currentRow = this.allRows[this.currentRowIndex];
@@ -628,6 +757,17 @@ export class GuruAnalysisInterface {
             
             // Rebuild data with fresh information
             this.currentData = freshSheetData;
+            
+            try {
+                // Update guru color in case signature changed
+                this.currentGuruColor = this.determineGuruColorFromSheet(freshSheetData);
+                console.log(`Updated guru color: ${this.currentGuruColor}`);
+            } catch (error) {
+                console.warn('Error determining guru color during background refresh:', error);
+                // Don't throw error in background refresh, just log it
+                return;
+            }
+            
             this.allRows = [];
             
             // Process all sheets and collect rows that need analysis
@@ -667,25 +807,17 @@ export class GuruAnalysisInterface {
     }
 
     buildDiscrepancyDisplay(currentRow) {
-        // Determine which sheet we're on based on sheet title or current guru signature
-        const sheetTitle = currentRow.sheetTitle.toLowerCase();
-        
-        // Get the current guru signature safely
-        let currentGuru = '';
-        if (this.authManager && this.authManager.guruSignature) {
-            currentGuru = this.authManager.guruSignature.toLowerCase();
-        }
-        
         // Collect other guru analyses (exclude the current guru's analysis)
         const otherAnalyses = [];
         
-        if (currentRow.redAnalysis && !currentGuru.includes('red')) {
+        // Show analyses from other gurus based on current guru color
+        if (this.currentGuruColor !== 'red' && currentRow.redAnalysis) {
             otherAnalyses.push({ name: 'Red', value: currentRow.redAnalysis });
         }
-        if (currentRow.blueAnalysis && !currentGuru.includes('blue')) {
+        if (this.currentGuruColor !== 'blue' && currentRow.blueAnalysis) {
             otherAnalyses.push({ name: 'Blue', value: currentRow.blueAnalysis });
         }
-        if (currentRow.greenAnalysis && !currentGuru.includes('green')) {
+        if (this.currentGuruColor !== 'green' && currentRow.greenAnalysis) {
             otherAnalyses.push({ name: 'Green', value: currentRow.greenAnalysis });
         }
         
@@ -810,15 +942,41 @@ export class GuruAnalysisInterface {
         analysisInterface.innerHTML = `
             <div class="empty-state">
                 <h3>No Analysis Data Found</h3>
-                <p>No rows found that match your guru signature and have the required columns:</p>
+                <p>No rows found with the required columns:</p>
                 <ul>
-                    <li>Player 1 (On the Play)</li>
-                    <li>Player 2 (On the Draw)</li>
-                    <li>Guru Analysis</li>
+                    <li>Player 1</li>
+                    <li>Player 2</li>
+                    <li>Guru Analysis columns (Red, Blue, Green)</li>
                 </ul>
                 <p>Please check that your sheets have the correct column headers and data.</p>
             </div>
         `;
+    }
+
+    showGuruSignatureError(errorMessage) {
+        const analysisInterface = document.getElementById('guru-analysis-interface');
+        const spreadsheetUrl = `https://docs.google.com/spreadsheets/d/${this.currentData.sheetId}/edit`;
+        
+        analysisInterface.innerHTML = `
+            <div class="empty-state">
+                <h3>Guru Signature Not Found</h3>
+                <p>${errorMessage}</p>
+                <p>This could happen if:</p>
+                <ul>
+                    <li>You haven't been assigned any matches to analyze yet</li>
+                    <li>Your guru signature doesn't match any signatures in the sheet</li>
+                    <li>The sheet structure has changed</li>
+                </ul>
+                <p>Please check your guru signature settings and the sheet.</p>
+                <p><a href="${spreadsheetUrl}" target="_blank" rel="noopener noreferrer" class="spreadsheet-link">Open Spreadsheet in Google Sheets</a></p>
+                <button id="retry-load-btn" class="primary-btn" style="margin-top: 16px;">Retry</button>
+            </div>
+        `;
+        
+        // Add retry functionality
+        document.getElementById('retry-load-btn').addEventListener('click', () => {
+            window.dispatchEvent(new CustomEvent('refreshAnalysis'));
+        });
     }
 
     getTotalRows() {
