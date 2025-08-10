@@ -31,6 +31,7 @@ export class GuruAnalysisInterface {
         // Navigation buttons
         document.getElementById('prev-btn').addEventListener('click', () => this.previousRow());
         document.getElementById('next-btn').addEventListener('click', () => this.nextRow());
+        document.getElementById('skip-btn').addEventListener('click', () => this.skipToNextIncomplete());
         document.getElementById('restart-analysis-btn').addEventListener('click', () => this.restartAnalysis());
     }
 
@@ -354,6 +355,11 @@ export class GuruAnalysisInterface {
         // Update navigation buttons
         document.getElementById('prev-btn').disabled = this.currentRowIndex === 0;
         document.getElementById('next-btn').disabled = this.currentRowIndex >= this.allRows.length - 1;
+        
+        // Update skip button - disable if there are no more incomplete rows after current
+        const nextIncompleteIndex = this.findFirstEmptyAnalysis(this.currentRowIndex + 1);
+        const hasMoreIncomplete = nextIncompleteIndex !== this.currentRowIndex && nextIncompleteIndex < this.allRows.length;
+        document.getElementById('skip-btn').disabled = !hasMoreIncomplete;
 
         // Hide completion message
         document.getElementById('completion-message').style.display = 'none';
@@ -772,6 +778,20 @@ export class GuruAnalysisInterface {
         if (this.currentRowIndex > 0) {
             this.currentRowIndex--;
             await this.showCurrentRow();
+        }
+    }
+
+    async skipToNextIncomplete() {
+        // Find the next empty/discrepancy starting from after current row
+        const nextIncompleteIndex = this.findFirstEmptyAnalysis(this.currentRowIndex + 1);
+        
+        // Check if we found a row after the current one
+        if (nextIncompleteIndex != this.currentRowIndex) {
+            this.currentRowIndex = nextIncompleteIndex;
+            await this.showCurrentRow();
+        } else {
+            // No more incomplete rows found after current, show completion message
+            this.showCompletionMessage();
         }
     }
 
