@@ -781,7 +781,7 @@ export class GuruAnalysisInterface {
         const nextIncompleteIndex = this.findFirstEmptyAnalysis(this.currentRowIndex + 1);
         
         // Check if we found a row after the current one
-        if (nextIncompleteIndex > this.currentRowIndex) {
+        if (nextIncompleteIndex != this.currentRowIndex) {
             this.currentRowIndex = nextIncompleteIndex;
             await this.showCurrentRow();
         } else {
