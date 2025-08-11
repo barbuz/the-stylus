@@ -16,8 +16,14 @@ export class GuruAnalysisInterface {
         this.currentRowIndex = 0;
         this.currentSheetIndex = 0;
         this.currentGuruColor = null;
+        // Store column indices as attributes for easier access
+        this.redAnalysisColIndex = -1;
+        this.blueAnalysisColIndex = -1;
+        this.greenAnalysisColIndex = -1;
+        this.redSignatureColIndex = -1;
+        this.blueSignatureColIndex = -1;
+        this.greenSignatureColIndex = -1;
         this.bindEvents();
-        
         // Handle window resize for mobile/desktop layout changes
         this.handleResize = this.handleResize.bind(this);
         window.addEventListener('resize', this.handleResize);
@@ -99,6 +105,9 @@ export class GuruAnalysisInterface {
         document.getElementById('next-btn').addEventListener('click', () => this.nextRow());
         document.getElementById('skip-btn').addEventListener('click', () => this.skipToNextIncomplete());
         document.getElementById('restart-analysis-btn').addEventListener('click', () => this.restartAnalysis());
+
+        // Guru color selector
+        this.bindGuruColorSelector();
     }
 
     handleResize() {
@@ -110,6 +119,130 @@ export class GuruAnalysisInterface {
             this.displayDeckInfo('player2', currentRow.player2);
         }
     }
+
+    bindGuruColorSelector() {
+        const trigger = document.getElementById('sheet-name-info');
+        const dropdown = document.getElementById('guru-color-dropdown');
+        
+        if (!trigger || !dropdown) {
+            console.warn('Guru color selector elements not found');
+            return;
+        }
+
+        // Toggle dropdown on trigger click
+        trigger.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isOpen = dropdown.classList.contains('show');
+            
+            if (isOpen) {
+                this.closeGuruColorDropdown();
+            } else {
+                this.openGuruColorDropdown();
+            }
+        });
+
+        // Handle color selection
+        dropdown.addEventListener('click', (e) => {
+            const option = e.target.closest('.guru-color-option');
+            if (option) {
+                const selectedColor = option.dataset.color;
+                this.changeGuruColor(selectedColor);
+                this.closeGuruColorDropdown();
+            }
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!trigger.contains(e.target) && !dropdown.contains(e.target)) {
+                this.closeGuruColorDropdown();
+            }
+        });
+
+        // Close dropdown on escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                this.closeGuruColorDropdown();
+            }
+        });
+    }
+
+    openGuruColorDropdown() {
+        const trigger = document.getElementById('sheet-name-info');
+        const dropdown = document.getElementById('guru-color-dropdown');
+        
+        trigger.classList.add('active');
+        dropdown.classList.add('show');
+        
+        // Update current color indicator
+        this.updateGuruColorDropdown();
+    }
+
+    closeGuruColorDropdown() {
+        const trigger = document.getElementById('sheet-name-info');
+        const dropdown = document.getElementById('guru-color-dropdown');
+        
+        trigger.classList.remove('active');
+        dropdown.classList.remove('show');
+    }
+
+    updateGuruColorDropdown() {
+        const dropdown = document.getElementById('guru-color-dropdown');
+        if (!dropdown) return;
+
+        // Remove current class from all options
+        dropdown.querySelectorAll('.guru-color-option').forEach(option => {
+            option.classList.remove('current');
+        });
+
+        // Add current class to the active guru color
+        if (this.currentGuruColor) {
+            const currentOption = dropdown.querySelector(`[data-color="${this.currentGuruColor}"]`);
+            if (currentOption) {
+                currentOption.classList.add('current');
+            }
+        }
+    }
+
+    async changeGuruColor(newColor) {
+        if (newColor === this.currentGuruColor) {
+            return; // No change needed
+        }
+
+        try {
+            this.uiController.showStatus(`Switching to ${newColor} guru...`, 'loading');
+            
+            const oldColor = this.currentGuruColor;
+            this.currentGuruColor = newColor;
+            
+            console.log(`Switching guru color from ${oldColor} to ${newColor}`);
+            
+            // Update the display immediately
+            this.updateGuruColorDisplay();
+            // Show the current row with the new guru color perspective
+            await this.showCurrentRow();
+            
+            this.uiController.showStatus(`Switched to ${newColor} guru successfully`, 'success');
+            
+        } catch (error) {
+            console.error('Error changing guru color:', error);
+            this.uiController.showStatus(`Error switching guru color: ${error.message}`, 'error');
+            
+            // Revert to old color on error
+            this.currentGuruColor = oldColor;
+            this.updateGuruColorDisplay();
+        }
+    }
+
+    updateGuruColorDisplay() {
+        const trigger = document.getElementById('sheet-name-info');
+        if (trigger && this.currentGuruColor) {
+            trigger.textContent = `${this.currentGuruColor.charAt(0).toUpperCase() + this.currentGuruColor.slice(1)} Guru`;
+        }
+        
+        // Update dropdown current indicator
+        this.updateGuruColorDropdown();
+    }
+
 
     async loadData(sheetData, guruColorAlreadyDetermined = false) {
         this.currentData = sheetData;
@@ -267,44 +400,28 @@ export class GuruAnalysisInterface {
         // Expected columns: ID, Player1, Player2, Red Analysis, Red Signature, Blue Analysis, Blue Signature, Green Analysis, Green Signature
         const player1ColIndex = this.findColumnIndex(headerRow, ['Player 1', 'Player1']);
         const player2ColIndex = this.findColumnIndex(headerRow, ['Player 2', 'Player2']);
-        
-        // Find guru analysis columns
-        const redAnalysisColIndex = this.findColumnIndex(headerRow, ['Red Analysis']);
-        const blueAnalysisColIndex = this.findColumnIndex(headerRow, ['Blue Analysis']);
-        const greenAnalysisColIndex = this.findColumnIndex(headerRow, ['Green Analysis']);
-        
-        // Find guru signature columns
-        const redSignatureColIndex = this.findColumnIndex(headerRow, ['Red Signature']);
-        const blueSignatureColIndex = this.findColumnIndex(headerRow, ['Blue Signature']);
-        const greenSignatureColIndex = this.findColumnIndex(headerRow, ['Green Signature']);
 
-        if (player1ColIndex === -1 || player2ColIndex === -1) {
-            console.log(`Skipping merged guru sheet - missing required player columns`);
-            return;
-        }
+        // Find guru analysis columns and store as class attributes
+        this.redAnalysisColIndex = this.findColumnIndex(headerRow, ['Red Analysis']);
+        this.blueAnalysisColIndex = this.findColumnIndex(headerRow, ['Blue Analysis']);
+        this.greenAnalysisColIndex = this.findColumnIndex(headerRow, ['Green Analysis']);
+        // Find guru signature columns and store as class attributes
+        this.redSignatureColIndex = this.findColumnIndex(headerRow, ['Red Signature']);
+        this.blueSignatureColIndex = this.findColumnIndex(headerRow, ['Blue Signature']);
+        this.greenSignatureColIndex = this.findColumnIndex(headerRow, ['Green Signature']);
 
-        // Determine current guru's analysis column based on color
-        let currentAnalysisColIndex = -1;
-        let currentSignatureColIndex = -1;
-        
-        switch (this.currentGuruColor) {
-            case 'red':
-                currentAnalysisColIndex = redAnalysisColIndex;
-                currentSignatureColIndex = redSignatureColIndex;
-                break;
-            case 'blue':
-                currentAnalysisColIndex = blueAnalysisColIndex;
-                currentSignatureColIndex = blueSignatureColIndex;
-                break;
-            case 'green':
-                currentAnalysisColIndex = greenAnalysisColIndex;
-                currentSignatureColIndex = greenSignatureColIndex;
-                break;
-        }
-
-        if (currentAnalysisColIndex === -1) {
-            console.log(`Skipping merged guru sheet - ${this.currentGuruColor} analysis column not found`);
-            return;
+        // Throw error if any required column is missing
+        if (
+            player1ColIndex === -1 ||
+            player2ColIndex === -1 ||
+            this.redAnalysisColIndex === -1 ||
+            this.blueAnalysisColIndex === -1 ||
+            this.greenAnalysisColIndex === -1 ||
+            this.redSignatureColIndex === -1 ||
+            this.blueSignatureColIndex === -1 ||
+            this.greenSignatureColIndex === -1
+        ) {
+            throw new Error('One or more required columns are missing in the pod sheet. Please check the sheet structure.');
         }
 
         // Process data rows (skip header)
@@ -316,12 +433,12 @@ export class GuruAnalysisInterface {
 
             const player1 = row[player1ColIndex] || '';
             const player2 = row[player2ColIndex] || '';
-            const redAnalysis = redAnalysisColIndex !== -1 ? row[redAnalysisColIndex] || '' : '';
-            const blueAnalysis = blueAnalysisColIndex !== -1 ? row[blueAnalysisColIndex] || '' : '';
-            const greenAnalysis = greenAnalysisColIndex !== -1 ? row[greenAnalysisColIndex] || '' : '';
-            const redSignature = redSignatureColIndex !== -1 ? row[redSignatureColIndex] || '' : '';
-            const blueSignature = blueSignatureColIndex !== -1 ? row[blueSignatureColIndex] || '' : '';
-            const greenSignature = greenSignatureColIndex !== -1 ? row[greenSignatureColIndex] || '' : '';
+            const redAnalysis = row[this.redAnalysisColIndex] || '';
+            const blueAnalysis = row[this.blueAnalysisColIndex] || '';
+            const greenAnalysis = row[this.greenAnalysisColIndex] || '';
+            const redSignature = row[this.redSignatureColIndex] || '';
+            const blueSignature = row[this.blueSignatureColIndex] || '';
+            const greenSignature = row[this.greenSignatureColIndex] || '';
 
             // Calculate outcome based on all guru analyses
             const outcomeValue = this.calculateOutcomeFromAnalyses(redAnalysis, blueAnalysis, greenAnalysis);
@@ -342,8 +459,6 @@ export class GuruAnalysisInterface {
                     redSignature: redSignature.toString().trim(),
                     blueSignature: blueSignature.toString().trim(),
                     greenSignature: greenSignature.toString().trim(),
-                    currentAnalysisColIndex,
-                    currentSignatureColIndex,
                     originalRowIndex: originalRowIndex // Use the original row index from unfiltered data
                 });
             }
@@ -561,8 +676,7 @@ export class GuruAnalysisInterface {
         // Update progress info
         document.getElementById('current-row-info').textContent = 
             `Row ${this.currentRowIndex + 1} of ${this.allRows.length}`;
-        document.getElementById('sheet-name-info').textContent = 
-            `Guru: ${this.currentGuruColor.charAt(0).toUpperCase() + this.currentGuruColor.slice(1)}`;
+        this.updateGuruColorDisplay();
 
         // Load card images for both players
         await this.loadPlayerCards('player1', currentRow.player1);
@@ -867,11 +981,13 @@ export class GuruAnalysisInterface {
         try {
             this.uiController.showStatus('Saving guru analysis...', 'loading');
 
+            // Use helper to get analysis column index
+            const analysisColIndex = this.getCurrentGuruColIndex('analysis');
             console.log('🎯 Updating cell:', {
                 sheetTitle: currentRow.sheetTitle,
                 originalRowIndex: currentRow.originalRowIndex,
                 filteredRowIndex: currentRow.rowIndex,
-                currentAnalysisColumn: currentRow.currentAnalysisColIndex,
+                analysisColIndex,
                 guruColor: this.currentGuruColor,
                 value: value
             });
@@ -881,7 +997,7 @@ export class GuruAnalysisInterface {
                 updates: [{
                     sheetId: currentRow.sheetId,
                     row: currentRow.originalRowIndex + 1, // +1 because sheets are 1-indexed
-                    col: currentRow.currentAnalysisColIndex + 1, // +1 because sheets are 1-indexed
+                    col: analysisColIndex + 1, // +1 because sheets are 1-indexed
                     value: value.toString(),
                     valueType: 'number', // Explicitly specify this is a number
                     isMergedGuruUpdate: true,
@@ -968,11 +1084,13 @@ export class GuruAnalysisInterface {
         try {
             this.uiController.showStatus('Claiming match...', 'loading');
 
+            // Use helper to get signature column index
+            const signatureColIndex = this.getCurrentGuruColIndex('signature');
             console.log('🎯 Claiming match:', {
                 sheetTitle: currentRow.sheetTitle,
                 originalRowIndex: currentRow.originalRowIndex,
                 filteredRowIndex: currentRow.rowIndex,
-                signatureColumn: currentRow.currentSignatureColIndex,
+                signatureColIndex,
                 guruColor: this.currentGuruColor,
                 userSignature: userGuruSignature
             });
@@ -982,7 +1100,7 @@ export class GuruAnalysisInterface {
                 updates: [{
                     sheetId: currentRow.sheetId,
                     row: currentRow.originalRowIndex + 1, // +1 because sheets are 1-indexed
-                    col: currentRow.currentSignatureColIndex + 1, // +1 because sheets are 1-indexed
+                    col: signatureColIndex + 1, // +1 because sheets are 1-indexed
                     value: userGuruSignature,
                     expectedValue: '', // Only update if current value is empty
                     valueType: 'string',
@@ -1074,11 +1192,13 @@ export class GuruAnalysisInterface {
         try {
             this.uiController.showStatus('Unclaiming match...', 'loading');
 
+            // Use helper to get signature column index
+            const signatureColIndex = this.getCurrentGuruColIndex('signature');
             console.log('🎯 Unclaiming match:', {
                 sheetTitle: currentRow.sheetTitle,
                 originalRowIndex: currentRow.originalRowIndex,
                 filteredRowIndex: currentRow.rowIndex,
-                signatureColumn: currentRow.currentSignatureColIndex,
+                signatureColIndex,
                 guruColor: this.currentGuruColor,
                 userSignature: userGuruSignature
             });
@@ -1088,7 +1208,7 @@ export class GuruAnalysisInterface {
                 updates: [{
                     sheetId: currentRow.sheetId,
                     row: currentRow.originalRowIndex + 1, // +1 because sheets are 1-indexed
-                    col: currentRow.currentSignatureColIndex + 1, // +1 because sheets are 1-indexed
+                    col: signatureColIndex + 1, // +1 because sheets are 1-indexed
                     value: '',
                     valueType: 'string',
                     isMergedGuruUpdate: true,
@@ -1308,6 +1428,35 @@ export class GuruAnalysisInterface {
         html += '</ul></div>';
         
         return html;
+    }
+
+    /**
+     * Returns the column index for the current guru color and type ('analysis' or 'signature')
+     */
+    getCurrentGuruColIndex(type = 'analysis') {
+        switch (type) {
+            case 'analysis':
+                switch (this.currentGuruColor) {
+                    case 'red':
+                        return this.redAnalysisColIndex;
+                    case 'blue':
+                        return this.blueAnalysisColIndex;
+                    case 'green':
+                        return this.greenAnalysisColIndex;
+                }
+                break;
+            case 'signature':
+                switch (this.currentGuruColor) {
+                    case 'red':
+                        return this.redSignatureColIndex;
+                    case 'blue':
+                        return this.blueSignatureColIndex;
+                    case 'green':
+                        return this.greenSignatureColIndex;
+                }
+                break;
+        }
+        return -1;
     }
     
     getOutcomeDisplayName(outcomeValue) {

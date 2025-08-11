@@ -463,6 +463,96 @@ section h2, .login-section h2 {
     border: 1px solid #dee2e6;
 }
 
+/* Guru Color Dropdown Styles */
+/* Guru Color Trigger (clickable area for dropdown) */
+.guru-color-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid #dee2e6;
+    background: #f8f9fa;
+    color: #2c3e50;
+    font-weight: 500;
+    transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+    position: relative;
+}
+
+.guru-color-trigger:hover, .guru-color-trigger:focus {
+    background: #e3f2fd;
+    border-color: #90caf9;
+    box-shadow: 0 2px 8px rgba(33, 150, 243, 0.08);
+    outline: none;
+}
+
+.guru-color-dropdown {
+    top: 100%;
+    left: 0;
+    min-width: 140px;
+    background: white;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-8px);
+    transition: all 0.2s ease;
+}
+
+.guru-color-dropdown.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.guru-color-option {
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid #f8f9fa;
+    transition: background-color 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.guru-color-option:last-child {
+    border-bottom: none;
+    border-radius: 0 0 6px 6px;
+}
+
+.guru-color-option:first-child {
+    border-radius: 6px 6px 0 0;
+}
+
+.guru-color-option:hover {
+    background-color: #f8f9fa;
+}
+
+.guru-color-option.current {
+    background-color: #e3f2fd;
+    font-weight: 500;
+}
+
+.guru-color-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.guru-color-indicator.red {
+    background-color: #dc3545;
+}
+.guru-color-indicator.blue {
+    background-color: #007bff;
+}
+.guru-color-indicator.green {
+    background-color: #28a745;
+}
+
 .editor-controls {
     display: flex;
     gap: 10px;
