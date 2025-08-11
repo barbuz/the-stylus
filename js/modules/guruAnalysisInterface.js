@@ -108,6 +108,9 @@ export class GuruAnalysisInterface {
 
         // Guru color selector
         this.bindGuruColorSelector();
+
+        // --- MATCH TABLE MODAL ---
+        document.getElementById('current-row-info').addEventListener('click', () => this.showMatchTableModal());
     }
 
     handleResize() {
@@ -244,7 +247,7 @@ export class GuruAnalysisInterface {
     }
 
 
-    async loadData(sheetData, guruColorAlreadyDetermined = false) {
+    async loadData(sheetData, guruColorAlreadyDetermined = false, showMatchTable = false) {
         this.currentData = sheetData;
         
         if (!guruColorAlreadyDetermined) {
@@ -286,8 +289,11 @@ export class GuruAnalysisInterface {
         if (this.allRows.length === 0) {
             this.showNoDataMessage();
         } else {
-            // Check if all analysis is already complete
-            if (this.isAnalysisComplete()) {
+            if (showMatchTable) {
+                // Show the match picker directly
+                this.showMatchTableModal();
+            }
+            else if (this.isAnalysisComplete()) {
                 // Even if complete, show the first row so user can see the data
                 this.currentRowIndex = 0;
                 await this.showCurrentRow();
@@ -1725,6 +1731,7 @@ export class GuruAnalysisInterface {
         // Continue with the normal data loading process, but skip guru color determination
         // Skip the loading state to avoid DOM element conflicts
         await this.loadData(sheetData, true);
+        this.showMatchTableModal();
     }
 
     showGuruSignatureError(errorMessage) {
@@ -1839,5 +1846,71 @@ export class GuruAnalysisInterface {
         } else {
             console.log('No info elements to display');
         }
+    }
+
+    // --- MATCH TABLE MODAL ---
+    showMatchTableModal() {
+        // Remove any existing modal
+        this.closeMatchTableModal();
+
+        // Create overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'match-table-overlay';
+
+        // Modal container
+        const modal = document.createElement('div');
+        modal.className = 'match-table-modal';
+
+        // Table
+        const table = document.createElement('table');
+        table.className = 'match-table';
+        table.innerHTML = `
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Player 1 Deck</th>
+                    <th>Player 2 Deck</th>
+                    <th>Signature</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${this.allRows.map((row, idx) => {
+                    const sig = this.getCurrentRowSignature(row) || '';
+                    const highlight = idx === this.currentRowIndex ? 'current-row' : '';
+                    return `<tr data-row="${idx}" class="${highlight}">
+                        <td>${idx + 1}</td>
+                        <td>${row.player1}</td>
+                        <td>${row.player2}</td>
+                        <td>${sig}</td>
+                    </tr>`;
+                }).join('')}
+            </tbody>
+        `;
+        modal.appendChild(table);
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        // Row click: jump to match
+        table.addEventListener('click', (e) => {
+            const tr = e.target.closest('tr[data-row]');
+            if (tr) {
+                const idx = parseInt(tr.getAttribute('data-row'), 10);
+                this.currentRowIndex = idx;
+                this.showCurrentRow();
+                this.closeMatchTableModal();
+            }
+        });
+
+        // Click outside modal closes
+        overlay.addEventListener('mousedown', (e) => {
+            if (e.target === overlay) {
+                this.closeMatchTableModal();
+            }
+        });
+    }
+
+    closeMatchTableModal() {
+        const existing = document.querySelector('.match-table-overlay');
+        if (existing) existing.remove();
     }
 }

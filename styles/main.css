@@ -570,6 +570,76 @@ section h2, .login-section h2 {
     gap: 10px;
 }
 
+/* Match Table Modal Styles */
+.match-table-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0,0,0,0.45);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.match-table-modal {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+    max-width: 90vw;
+    width: 900px;
+    max-height: 80vh;
+    overflow: auto;
+    padding: 32px 24px;
+    position: relative;
+}
+.match-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 1rem;
+    background: white;
+}
+.match-table th, .match-table td {
+    border-bottom: 1px solid #e0e0e0;
+    padding: 8px 12px;
+    text-align: left;
+}
+.match-table th {
+    background: #f5f7fa;
+    font-weight: 700;
+    color: #2c3e50;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+.match-table tr {
+    cursor: pointer;
+}
+.match-table tr.current-row {
+    background: #bbdefb;
+    font-weight: bold;
+}
+.match-table tr[data-row]:hover {
+    background: #e3f2fd;
+}
+.match-table td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 25vw;
+}
+@media (max-width: 1000px) {
+    .match-table-modal {
+        width: 98vw;
+        padding: 10px 2vw;
+    }
+    .match-table th, .match-table td {
+        padding: 6px 4px;
+        font-size: 0.95em;
+    }
+}
+
 /* Fullscreen analysis mode */
 .fullscreen-analysis {
     position: fixed;
