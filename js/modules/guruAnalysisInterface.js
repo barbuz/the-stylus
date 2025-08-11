@@ -1661,7 +1661,7 @@ export class GuruAnalysisInterface {
         colorSelectionContainer.innerHTML = `
             <div class="color-selection-screen">
                 <h3>Choose Your Guru Color</h3>
-                <h4 class="sheet-title">Sheet: ${sheetTitle}</h4>
+                <h4 class="sheet-title">Pod: ${sheetTitle}</h4>
                 <p>Your signature was not found in any existing analysis. Please select which guru color you want to use for analysis:</p>
                 
                 <div class="color-options">

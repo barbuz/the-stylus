@@ -1596,10 +1596,11 @@ section h2, .login-section h2 {
 
 /* Color Selection Screen */
 .color-selection-screen {
-    max-width: 600px;
     margin: 0 auto;
     text-align: center;
-    padding: 40px 20px;
+    padding: 20px 20px;
+    max-height: 100vh;
+    overflow-y: auto;
 }
 
 .color-selection-screen h3 {
