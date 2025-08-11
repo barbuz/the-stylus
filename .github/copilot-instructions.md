@@ -3,6 +3,10 @@ Browser-based tool for gurus to edit result sheets for 3 Card Blind MTG matches 
 
 Always reference these instructions first and fallback to search or bash commands only when you encounter unexpected information that does not match the info here.
 
+## Application Logic
+3 Card Blind matches consist of two players, each with a deck of 3 cards. The result of the match is determined by human "gurus" who analyse the match and score it as Win/Tie/Loss. Three gurus analyse each match and an agreement must be reached on the final outcome. The three gurus take the roles of Red, Blue, and Green, each analyzing the match from their perspective. The possible results that each guru can pick from are Win, Tie, and Loss.
+Before scoring a match the guru must claim it by entering their guru signature. This tells other gurus with the same color that this match is being analysed. Gurus can analyse only matches that they have claimed with their signature.
+
 ## Application Architecture
 - **Pure client-side application** - no build process, no server dependencies
 - **Technology stack**: HTML5, CSS3, ES6 JavaScript modules
