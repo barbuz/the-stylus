@@ -111,17 +111,26 @@ export class GuruAnalysisInterface {
         }
     }
 
-    async loadData(sheetData) {
+    async loadData(sheetData, guruColorAlreadyDetermined = false) {
         this.currentData = sheetData;
         
-        try {
-            // Determine the current guru color from the actual sheet data
-            this.currentGuruColor = this.determineGuruColorFromSheet(sheetData);
-            console.log(`Determined guru color: ${this.currentGuruColor}`);
-        } catch (error) {
-            console.error('Error determining guru color:', error);
-            this.showGuruSignatureError(error.message);
-            return;
+        if (!guruColorAlreadyDetermined) {
+            try {
+                // Determine the current guru color from the actual sheet data
+                this.currentGuruColor = this.determineGuruColorFromSheet(sheetData);
+                console.log(`Determined guru color: ${this.currentGuruColor}`);
+            } catch (error) {
+                console.error('Error determining guru color:', error);
+                
+                // Check if this is a "signature not found" error - offer color selection
+                if (error.message.includes('not found in any analysis column')) {
+                    this.showGuruColorSelection(sheetData);
+                    return;
+                } else {
+                    this.showGuruSignatureError(error.message);
+                    return;
+                }
+            }
         }
         
         this.allRows = [];
@@ -1432,6 +1441,146 @@ export class GuruAnalysisInterface {
                 <p>Please check that your sheets have the correct column headers and data.</p>
             </div>
         `;
+    }
+
+    calculateColorStatistics(sheetData) {
+        // Find the merged guru sheet
+        const mergedGuruSheet = sheetData.sheets?.find(sheet => 
+            sheet.sheetTitle === 'Merged Gurus'
+        );
+
+        if (!mergedGuruSheet || !mergedGuruSheet.values || mergedGuruSheet.values.length < 2) {
+            return { red: { claimed: 0, total: 0 }, blue: { claimed: 0, total: 0 }, green: { claimed: 0, total: 0 } };
+        }
+
+        const headerRow = mergedGuruSheet.values[0];
+        
+        // Find columns
+        const player1ColIndex = this.findColumnIndex(headerRow, ['Player 1', 'Player1']);
+        const player2ColIndex = this.findColumnIndex(headerRow, ['Player 2', 'Player2']);
+        const redSignatureColIndex = this.findColumnIndex(headerRow, ['Red Signature']);
+        const blueSignatureColIndex = this.findColumnIndex(headerRow, ['Blue Signature']);
+        const greenSignatureColIndex = this.findColumnIndex(headerRow, ['Green Signature']);
+
+        const stats = {
+            red: { claimed: 0, total: 0 },
+            blue: { claimed: 0, total: 0 },
+            green: { claimed: 0, total: 0 }
+        };
+
+        // Count matches for each color
+        for (let rowIndex = 1; rowIndex < mergedGuruSheet.values.length; rowIndex++) {
+            const row = mergedGuruSheet.values[rowIndex];
+            const player1 = row[player1ColIndex] || '';
+            const player2 = row[player2ColIndex] || '';
+            
+            // Only count rows that have player data (actual matches)
+            if (player1.trim() || player2.trim()) {
+                stats.red.total++;
+                stats.blue.total++;
+                stats.green.total++;
+
+                // Check if each color is claimed
+                if (redSignatureColIndex !== -1 && row[redSignatureColIndex] && row[redSignatureColIndex].trim() !== '') {
+                    stats.red.claimed++;
+                }
+                if (blueSignatureColIndex !== -1 && row[blueSignatureColIndex] && row[blueSignatureColIndex].trim() !== '') {
+                    stats.blue.claimed++;
+                }
+                if (greenSignatureColIndex !== -1 && row[greenSignatureColIndex] && row[greenSignatureColIndex].trim() !== '') {
+                    stats.green.claimed++;
+                }
+            }
+        }
+
+        return stats;
+    }
+
+    showGuruColorSelection(sheetData) {
+        // Hide the existing guru analysis interface instead of overwriting it
+        const analysisInterface = document.getElementById('guru-analysis-interface');
+        analysisInterface.style.display = 'none';
+        
+        // Create a new color selection container
+        const colorSelectionContainer = document.createElement('div');
+        colorSelectionContainer.id = 'color-selection-container';
+        colorSelectionContainer.className = 'color-selection-container';
+        
+        const stats = this.calculateColorStatistics(sheetData);
+        const sheetTitle = sheetData.title || 'Unknown Sheet';
+        
+        colorSelectionContainer.innerHTML = `
+            <div class="color-selection-screen">
+                <h3>Choose Your Guru Color</h3>
+                <h4 class="sheet-title">Sheet: ${sheetTitle}</h4>
+                <p>Your signature was not found in any existing analysis. Please select which guru color you want to use for analysis:</p>
+                
+                <div class="color-options">
+                    <div class="color-option" id="color-red">
+                        <div class="color-circle red"></div>
+                        <div class="color-info">
+                            <h4>Red Guru</h4>
+                            <p>${stats.red.claimed} / ${stats.red.total} matches claimed</p>
+                        </div>
+                        <button class="select-color-btn" data-color="red">Select Red</button>
+                    </div>
+                    
+                    <div class="color-option" id="color-blue">
+                        <div class="color-circle blue"></div>
+                        <div class="color-info">
+                            <h4>Blue Guru</h4>
+                            <p>${stats.blue.claimed} / ${stats.blue.total} matches claimed</p>
+                        </div>
+                        <button class="select-color-btn" data-color="blue">Select Blue</button>
+                    </div>
+                    
+                    <div class="color-option" id="color-green">
+                        <div class="color-circle green"></div>
+                        <div class="color-info">
+                            <h4>Green Guru</h4>
+                            <p>${stats.green.claimed} / ${stats.green.total} matches claimed</p>
+                        </div>
+                        <button class="select-color-btn" data-color="green">Select Green</button>
+                    </div>
+                </div>
+                
+                <p class="color-selection-note">You can start analyzing matches by claiming unclaimed matches or work on matches already assigned to your chosen color.</p>
+            </div>
+        `;
+        
+        // Insert the color selection container after the analysis interface
+        analysisInterface.parentNode.insertBefore(colorSelectionContainer, analysisInterface.nextSibling);
+        
+        // Add event listeners for color selection
+        colorSelectionContainer.querySelectorAll('.select-color-btn').forEach(button => {
+            button.addEventListener('click', (e) => {
+                const selectedColor = e.target.getAttribute('data-color');
+                this.selectGuruColor(selectedColor, sheetData, colorSelectionContainer);
+            });
+        });
+    }
+
+    async selectGuruColor(color, sheetData, colorSelectionContainer) {
+        console.log(`User selected guru color: ${color}`);
+        
+        // Set the guru color
+        this.currentGuruColor = color;
+        
+        // Remove the color selection container
+        if (colorSelectionContainer && colorSelectionContainer.parentNode) {
+            colorSelectionContainer.parentNode.removeChild(colorSelectionContainer);
+        }
+        
+        // Show the analysis interface again
+        const analysisInterface = document.getElementById('guru-analysis-interface');
+        analysisInterface.style.display = '';
+        
+        // Ensure the sheet editor is visible before loading data
+        this.uiController.showSheetEditor();
+        
+        // Continue with the normal data loading process, but skip guru color determination
+        // Skip the loading state to avoid DOM element conflicts
+        await this.loadData(sheetData, true);
     }
 
     showGuruSignatureError(errorMessage) {
