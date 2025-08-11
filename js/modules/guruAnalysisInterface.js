@@ -627,11 +627,13 @@ export class GuruAnalysisInterface {
         const scoringButtons = document.querySelectorAll('.scoring-btn');
         const claimedMessage = document.getElementById('claimed-message');
         const claimButton = document.getElementById('claim-button');
+        const unclaimButton = document.getElementById('unclaim-button');
         
         if (isRowClaimedByAnotherGuru) {
-            // Hide scoring buttons and claim button, show claimed message
+            // Hide scoring buttons, claim button, and unclaim button, show claimed message
             scoringButtons.forEach(btn => btn.style.display = 'none');
             if (claimButton) claimButton.style.display = 'none';
+            if (unclaimButton) unclaimButton.style.display = 'none';
             
             // Get the current analysis value for the claimed row
             const currentAnalysis = this.getCurrentGuruAnalysis(currentRow);
@@ -655,12 +657,16 @@ export class GuruAnalysisInterface {
                 }
             }
         } else if (isRowUnclaimed) {
-            // Hide scoring buttons and claimed message, show claim button
+            // Hide scoring buttons, claimed message, and unclaim button, show claim button
             scoringButtons.forEach(btn => btn.style.display = 'none');
             if (claimedMessage) claimedMessage.style.display = 'none';
+            if (unclaimButton) unclaimButton.style.display = 'none';
             
             if (claimButton) {
                 claimButton.style.display = 'block';
+                // Reset claim button in case it is in "Claiming..." state
+                claimButton.disabled = false;
+                claimButton.textContent = 'Claim Match';
             } else {
                 // Create claim button if it doesn't exist
                 const newClaimButton = document.createElement('button');
@@ -681,8 +687,39 @@ export class GuruAnalysisInterface {
             if (claimedMessage) claimedMessage.style.display = 'none';
             if (claimButton) claimButton.style.display = 'none';
             
-            // Highlight the appropriate button based on current guru analysis value
+            // Check if user has scored this match yet
             const currentAnalysis = this.getCurrentGuruAnalysis(currentRow);
+            const hasUserScored = currentAnalysis && currentAnalysis.trim() !== '';
+            
+            // Show/hide unclaim button based on whether user has scored
+            const unclaimButton = document.getElementById('unclaim-button');
+            if (!hasUserScored) {
+                // User has claimed but not scored - show unclaim button
+                if (unclaimButton) {
+                    unclaimButton.style.display = 'block';
+                    // Reset unclaim button in case it is in "Unclaiming..." state
+                    unclaimButton.disabled = false;
+                    unclaimButton.textContent = 'Unclaim Match';
+                } else {
+                    // Create unclaim button if it doesn't exist
+                    const newUnclaimButton = document.createElement('button');
+                    newUnclaimButton.id = 'unclaim-button';
+                    newUnclaimButton.className = 'unclaim-btn secondary-btn';
+                    newUnclaimButton.textContent = 'Unclaim Match';
+                    newUnclaimButton.addEventListener('click', () => this.unclaimRow());
+                    
+                    // Insert after the skip button
+                    const skipButton = document.getElementById('skip-btn');
+                    if (skipButton) {
+                        skipButton.insertAdjacentElement('afterend', newUnclaimButton);
+                    }
+                }
+            } else {
+                // User has scored - hide unclaim button
+                if (unclaimButton) unclaimButton.style.display = 'none';
+            }
+            
+            // Highlight the appropriate button based on current guru analysis value
             const currentAnalysisValue = currentAnalysis ? parseFloat(currentAnalysis) : null;
             this.highlightCurrentAnalysisButton(currentAnalysisValue);
         }
@@ -877,13 +914,8 @@ export class GuruAnalysisInterface {
                 return;
             }
             
-            // Move to next row automatically if not complete
-            setTimeout(async () => {
-                await this.moveToNextIncompleteRow();
-                
-                // After moving to the next row, reload data in the background to get fresh updates
-                this.reloadAllDataInBackground();
-            }, 500);
+            // Reload data in the background to get fresh updates without moving to next row
+            this.reloadAllDataInBackground();
             
         } catch (error) {
             console.error('Error saving analysis:', error);
@@ -987,6 +1019,104 @@ export class GuruAnalysisInterface {
             } else {
                 this.uiController.showStatus(`Error claiming match: ${error.message}`, 'error');
             }
+        }
+    }
+
+    async unclaimRow() {
+        if (this.currentRowIndex >= this.allRows.length) return;
+
+        const currentRow = this.allRows[this.currentRowIndex];
+        
+        // Get user's guru signature to verify ownership
+        let userGuruSignature = '';
+        if (this.authManager && this.authManager.guruSignature) {
+            userGuruSignature = this.authManager.guruSignature;
+        } else {
+            userGuruSignature = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE) || '';
+        }
+
+        if (!userGuruSignature.trim()) {
+            this.uiController.showStatus('No guru signature found.', 'error');
+            return;
+        }
+
+        // Verify that the current user owns this match
+        const currentRowSignature = this.getCurrentRowSignature(currentRow);
+        if (currentRowSignature !== userGuruSignature) {
+            this.uiController.showStatus('You can only unclaim matches that you have claimed.', 'error');
+            return;
+        }
+
+        // Check if user has already scored this match
+        const currentAnalysis = this.getCurrentGuruAnalysis(currentRow);
+        if (currentAnalysis && currentAnalysis.trim() !== '') {
+            this.uiController.showStatus('Cannot unclaim a match that has already been scored.', 'error');
+            return;
+        }
+
+        // Show spinner on unclaim button
+        const unclaimButton = document.getElementById('unclaim-button');
+        const originalButtonText = unclaimButton ? unclaimButton.textContent : 'Unclaim Match';
+        if (unclaimButton) {
+            unclaimButton.disabled = true;
+            unclaimButton.innerHTML = '<span class="spinner"></span> Unclaiming...';
+        }
+
+        try {
+            this.uiController.showStatus('Unclaiming match...', 'loading');
+
+            console.log('🎯 Unclaiming match:', {
+                sheetTitle: currentRow.sheetTitle,
+                originalRowIndex: currentRow.originalRowIndex,
+                filteredRowIndex: currentRow.rowIndex,
+                signatureColumn: currentRow.currentSignatureColIndex,
+                guruColor: this.currentGuruColor,
+                userSignature: userGuruSignature
+            });
+
+            // Clear the signature by setting it to empty string
+            const updates = {
+                updates: [{
+                    sheetId: currentRow.sheetId,
+                    row: currentRow.originalRowIndex + 1, // +1 because sheets are 1-indexed
+                    col: currentRow.currentSignatureColIndex + 1, // +1 because sheets are 1-indexed
+                    value: '',
+                    valueType: 'string',
+                    isMergedGuruUpdate: true,
+                    guruSheetIds: this.currentData.sheets.find(s => s.sheetTitle === 'Merged Gurus')?.guruSheetIds
+                }]
+            };
+
+            await this.sheetsAPI.updateSheetData(this.currentData.sheetId, updates);
+            
+            // Update local data to clear the signature
+            switch (this.currentGuruColor) {
+                case 'red':
+                    currentRow.redSignature = '';
+                    break;
+                case 'blue':
+                    currentRow.blueSignature = '';
+                    break;
+                case 'green':
+                    currentRow.greenSignature = '';
+                    break;
+            }
+            
+            this.uiController.showStatus('Match unclaimed successfully!', 'success');
+            
+            // Refresh the display to show claim button now that the match is unclaimed
+            await this.showCurrentRow();
+            
+        } catch (error) {
+            console.error('Error unclaiming match:', error);
+            
+            // Reset unclaim button on error
+            if (unclaimButton) {
+                unclaimButton.disabled = false;
+                unclaimButton.textContent = originalButtonText;
+            }
+            
+            this.uiController.showStatus(`Error unclaiming match: ${error.message}`, 'error');
         }
     }
 
