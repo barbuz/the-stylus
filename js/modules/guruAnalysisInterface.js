@@ -850,11 +850,6 @@ export class GuruAnalysisInterface {
         // Update navigation buttons
         document.getElementById('prev-btn').disabled = this.currentRowIndex === 0;
         document.getElementById('next-btn').disabled = this.currentRowIndex >= this.allRows.length - 1;
-        
-        // Update skip button - disable if there are no more incomplete rows after current
-        const nextIncompleteIndex = this.findFirstEmptyAnalysis(this.currentRowIndex + 1);
-        const hasMoreIncomplete = nextIncompleteIndex !== this.currentRowIndex && nextIncompleteIndex < this.allRows.length;
-        document.getElementById('skip-btn').disabled = !hasMoreIncomplete;
 
         // Hide completion message
         document.getElementById('completion-message').style.display = 'none';
