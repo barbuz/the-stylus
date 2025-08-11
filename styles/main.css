@@ -487,10 +487,17 @@ section h2, .login-section h2 {
     outline: none;
 }
 
+
+.guru-color-selector {
+    position: relative;
+    display: inline-block;
+}
+
 .guru-color-dropdown {
+    position: absolute;
     top: 100%;
     left: 0;
-    min-width: 140px;
+    min-width: 160px;
     background: white;
     border: 1px solid #dee2e6;
     border-radius: 6px;
@@ -500,12 +507,14 @@ section h2, .login-section h2 {
     visibility: hidden;
     transform: translateY(-8px);
     transition: all 0.2s ease;
+    pointer-events: none;
 }
 
 .guru-color-dropdown.show {
     opacity: 1;
     visibility: visible;
     transform: translateY(0);
+    pointer-events: auto;
 }
 
 .guru-color-option {
@@ -516,6 +525,9 @@ section h2, .login-section h2 {
     display: flex;
     align-items: center;
     gap: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .guru-color-option:last-child {
@@ -791,46 +803,56 @@ section h2, .login-section h2 {
     margin-bottom: 0;
 }
 
-/* Navigation controls between players */
+/* Overlay navigation controls in match-details */
+.match-details{
+    position: relative;
+}
+
 .navigation-controls {
+    position: absolute;
+    top: 55%;
+    left: 0;
+    width: 100%;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0 20px;
-    position: relative;
-    height: 60px;
-    flex-shrink: 0;
+    pointer-events: none; /* allow underlying elements to be clickable except buttons */
+    z-index: 2;
+    transform: translateY(-50%);
+    padding: 0 0.5rem;
 }
 
-.nav-arrow-btn {
-    background: #f8f9fa;
-    border: 2px solid #dee2e6;
+.navigation-controls .nav-arrow-btn {
+    pointer-events: auto; /* make buttons clickable */
+    background: rgba(255,255,255,0.85);
     border-radius: 50%;
-    width: 50px;
-    height: 50px;
-    font-size: 28px;
-    font-weight: bold;
-    color: #495057;
-    cursor: pointer;
-    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    font-size: 1.6rem;
+    width: 2.5rem;
+    height: 2.5rem;
     display: flex;
     align-items: center;
     justify-content: center;
+    border: none;
+    transition: background 0.2s;
+    font-weight: bold;
+    color: #495057;
+    cursor: pointer;
     line-height: 1;
 }
 
-.nav-arrow-btn:hover:not(:disabled) {
+.navigation-controls .nav-arrow-btn:hover:not(:disabled) {
     background: #e9ecef;
     border-color: #adb5bd;
     color: #343a40;
     transform: scale(1.05);
 }
 
-.nav-arrow-btn:active:not(:disabled) {
+.navigation-controls .nav-arrow-btn:active:not(:disabled) {
     transform: scale(0.95);
 }
 
-.nav-arrow-btn:disabled {
+.navigation-controls .nav-arrow-btn:disabled {
     background: #f8f9fa;
     border-color: #e9ecef;
     color: #ced4da;
