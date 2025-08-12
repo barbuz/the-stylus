@@ -26,19 +26,29 @@ export class AuthManager {
             await gapi.client.init({
                 discoveryDocs: CONFIG.DISCOVERY_DOCS,
             });
+
+            // Load user ID from localStorage if available
+            const userId = localStorage.getItem(CONFIG.STORAGE_KEYS.USER_ID);
             
             // Initialize Google Identity Services for authentication
             this.tokenClient = google.accounts.oauth2.initTokenClient({
                 client_id: CONFIG.GOOGLE_CLIENT_ID,
                 scope: CONFIG.SCOPES,
+                login_hint: userId || '', // Use stored user ID if available
                 callback: (response) => {
                     if (response.error) {
                         console.error('OAuth error:', response.error);
                         return;
                     }
-                    
+                    const idToken = response.id_token;
+                    let sub = null;
+                    // If an ID token is provided, extract the user ID (sub)
+                    if (idToken) {
+                        const payload = JSON.parse(atob(idToken.split('.')[1]));
+                        sub = payload.sub;
+                    }
                     console.log('✅ OAuth token received');
-                    this.handleAuthSuccess(response.access_token, null, response.expires_in);
+                    this.handleAuthSuccess(response.access_token, sub, response.expires_in);
                 }
             });
             
@@ -52,7 +62,7 @@ export class AuthManager {
     }
 
 
-    async handleAuthSuccess(accessToken, refreshToken = null, expiresIn = 3600) {
+    async handleAuthSuccess(accessToken, sub, expiresIn = 3600) {
         try {
             // Set access token for gapi client
             gapi.client.setToken({
@@ -66,7 +76,16 @@ export class AuthManager {
             this.isAuthenticated = true;
             
             // Store tokens for persistence
-            this.saveTokens(accessToken, refreshToken, expiresIn);
+            this.saveTokens(accessToken, expiresIn);
+
+            // Save user sub if they want to be remembered
+            if (this.shouldRememberUser() && sub) {
+                localStorage.setItem(CONFIG.STORAGE_KEYS.USER_ID, sub);
+                localStorage.setItem(CONFIG.STORAGE_KEYS.LAST_LOGIN, Date.now().toString());
+            } else {
+                localStorage.removeItem(CONFIG.STORAGE_KEYS.USER_ID);
+                localStorage.removeItem(CONFIG.STORAGE_KEYS.LAST_LOGIN);
+            }
             
             // Initialize user preferences in Google Drive
             await this.initializeUserPreferences();
@@ -76,10 +95,8 @@ export class AuthManager {
             this.showAppContent();
             
             // Dispatch login event
-            window.dispatchEvent(new CustomEvent('userLoggedIn', { 
-                detail: { user: this.user } 
-            }));
-            
+            window.dispatchEvent(new CustomEvent('userLoggedIn'));
+
             console.log('✅ User successfully authenticated');
             
         } catch (error) {
@@ -147,7 +164,7 @@ export class AuthManager {
         }
     }
 
-    saveTokens(accessToken, refreshToken = null, expiresIn = 3600) {
+    saveTokens(accessToken, expiresIn = 3600) {
         localStorage.setItem(CONFIG.STORAGE_KEYS.ACCESS_TOKEN, accessToken);
         
         // Calculate expiry time
@@ -205,6 +222,13 @@ export class AuthManager {
                 return false;
             }
 
+            // Load user ID from localStorage
+            const userId = localStorage.getItem(CONFIG.STORAGE_KEYS.USER_ID);
+            if (!userId) {
+                console.log('🔐 Auto re-auth skipped - user ID not found');
+                return false;
+            }
+
             console.log('🔄 Attempting automatic re-authentication...');
             
             // Try silent authentication with Google Identity Services
@@ -219,6 +243,8 @@ export class AuthManager {
                     const silentTokenClient = google.accounts.oauth2.initTokenClient({
                         client_id: CONFIG.GOOGLE_CLIENT_ID,
                         scope: CONFIG.SCOPES,
+                        login_hint: userId, // Use stored user ID
+                        prompt: 'none', // No user interaction
                         callback: (response) => {
                             clearTimeout(timeout);
                             
@@ -234,9 +260,7 @@ export class AuthManager {
                     });
 
                     // Request token silently (no user interaction)
-                    silentTokenClient.requestAccessToken({ 
-                        prompt: 'none'
-                    });
+                    silentTokenClient.requestAccessToken();
                     
                 } catch (error) {
                     clearTimeout(timeout);
@@ -309,9 +333,7 @@ export class AuthManager {
                     
                     // Dispatch login event for restored session
                     setTimeout(() => {
-                        window.dispatchEvent(new CustomEvent('userLoggedIn', { 
-                            detail: { user: this.user } 
-                        }));
+                        window.dispatchEvent(new CustomEvent('userLoggedIn'));
                     }, 100);
                     
                     return true;
@@ -371,7 +393,7 @@ export class AuthManager {
             this.setLoginButtonLoading(true);
             
             // Request access token using Google Identity Services
-            this.tokenClient.requestAccessToken({ prompt: 'consent' });
+            this.tokenClient.requestAccessToken();
             
         } catch (error) {
             console.error('Error during login:', error);

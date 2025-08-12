@@ -85,8 +85,8 @@ class ThreeCardBlindGuruTool {
     
     setupPreferencesHandlers() {
         // Listen for user login
-        window.addEventListener('userLoggedIn', async (event) => {
-            console.log('User logged in:', event.detail.user.name);
+        window.addEventListener('userLoggedIn', async () => {
+            console.log('User logged in');
             
             // Only render auth section if it hasn't been rendered yet during initialization
             // This prevents duplicate rendering when user is already authenticated

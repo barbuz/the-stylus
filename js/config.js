@@ -10,7 +10,8 @@ export const CONFIG = {
     ],
     SCOPES: [
         'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive.appdata'
+        'https://www.googleapis.com/auth/drive.appdata',
+        'openid'
     ].join(' '),
     
     // Application settings
@@ -21,9 +22,9 @@ export const CONFIG = {
         GURU_SIGNATURE: 'guru_signature',
         ACCESS_TOKEN: 'access_token',
         TOKEN_EXPIRY: 'token_expiry',
-        USER_PROFILE: 'user_profile',
+        USER_ID: 'user_id',
         REMEMBER_USER: 'remember_user',
         LAST_LOGIN: 'last_login',
-        RECENT_PODS: 'recent_pods'
+        RECENT_PODS: 'recent_pods',
     }
 };
