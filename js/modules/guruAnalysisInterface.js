@@ -786,36 +786,59 @@ export class GuruAnalysisInterface {
                 }
             }
         } else if (isRowUnclaimed) {
-            // Hide scoring buttons, claimed message, and unclaim button, show claim button
+            // Hide scoring buttons, claimed message, and unclaim button, show claim button and claim deck button
             scoringButtons.forEach(btn => btn.style.display = 'none');
             if (claimedMessage) claimedMessage.style.display = 'none';
             if (unclaimButton) unclaimButton.style.display = 'none';
-            
-            if (claimButton) {
-                claimButton.style.display = 'block';
-                // Reset claim button in case it is in "Claiming..." state
-                claimButton.disabled = false;
-                claimButton.textContent = 'Claim Match';
+
+            // --- Claim Match Button ---
+            let claimBtn = claimButton;
+            if (claimBtn) {
+                claimBtn.style.display = 'block';
+                claimBtn.disabled = false;
+                claimBtn.textContent = 'Claim Match';
             } else {
-                // Create claim button if it doesn't exist
-                const newClaimButton = document.createElement('button');
-                newClaimButton.id = 'claim-button';
-                newClaimButton.className = 'claim-btn primary-btn';
-                newClaimButton.textContent = 'Claim Match';
-                newClaimButton.addEventListener('click', () => this.claimRow());
-                
-                // Insert after the scoring buttons container
+                claimBtn = document.createElement('button');
+                claimBtn.id = 'claim-button';
+                claimBtn.className = 'claim-btn primary-btn';
+                claimBtn.textContent = 'Claim Match';
+                claimBtn.addEventListener('click', () => this.claimRow());
                 const scoringContainer = document.querySelector('.scoring-buttons');
                 if (scoringContainer) {
-                    scoringContainer.insertAdjacentElement('afterend', newClaimButton);
+                    scoringContainer.insertAdjacentElement('afterend', claimBtn);
                 }
             }
+
+            // --- Claim Deck Button ---
+            let claimDeckBtn = document.getElementById('claim-deck-button');
+            if (!claimDeckBtn) {
+                claimDeckBtn = document.createElement('button');
+                claimDeckBtn.id = 'claim-deck-button';
+                claimDeckBtn.className = 'claim-btn primary-btn';
+                claimDeckBtn.textContent = 'Claim Deck';
+                claimDeckBtn.addEventListener('click', async () => {
+                    claimDeckBtn.disabled = true;
+                    claimDeckBtn.innerHTML = '<span class="spinner"></span> Claiming...';
+                    await this.claimDeckRows();
+                    claimDeckBtn.disabled = false;
+                    claimDeckBtn.textContent = 'Claim Deck';
+                });
+                if (claimBtn && claimBtn.nextSibling) {
+                    claimBtn.parentNode.insertBefore(claimDeckBtn, claimBtn.nextSibling);
+                } else if (claimBtn) {
+                    claimBtn.parentNode.appendChild(claimDeckBtn);
+                }
+            } else {
+                claimDeckBtn.style.display = 'inline-block';
+            }
         } else if (isRowOwnedByCurrentUser) {
-            // Show scoring buttons, hide claimed message and claim button
+            // Show scoring buttons, hide claimed message and claim/claim deck buttons
             scoringButtons.forEach(btn => btn.style.display = '');
             if (claimedMessage) claimedMessage.style.display = 'none';
             if (claimButton) claimButton.style.display = 'none';
-            
+            const claimDeckBtn = document.getElementById('claim-deck-button');
+            if (claimDeckBtn) claimDeckBtn.style.display = 'none';
+
             // Check if user has scored this match yet
             const currentAnalysis = this.getCurrentGuruAnalysis(currentRow);
             const hasUserScored = currentAnalysis && currentAnalysis.trim() !== '';
@@ -836,7 +859,6 @@ export class GuruAnalysisInterface {
                     newUnclaimButton.className = 'unclaim-btn secondary-btn';
                     newUnclaimButton.textContent = 'Unclaim Match';
                     newUnclaimButton.addEventListener('click', () => this.unclaimRow());
-                    
                     // Insert after the skip button
                     const skipButton = document.getElementById('skip-btn');
                     if (skipButton) {
@@ -862,6 +884,118 @@ export class GuruAnalysisInterface {
 
         // Preload next match's card images in the background
         this.preloadNextMatchCards();
+    }
+
+    /**
+     * Claim all unclaimed matches with the same Player 1 deck as the current row
+     */
+    async claimDeckRows() {
+        if (this.currentRowIndex >= this.allRows.length) return;
+
+        const currentRow = this.allRows[this.currentRowIndex];
+        const player1Deck = currentRow.player1;
+        if (!player1Deck) return;
+
+        // Get user's guru signature
+        let userGuruSignature = '';
+        if (this.authManager && this.authManager.guruSignature) {
+            userGuruSignature = this.authManager.guruSignature;
+        } else {
+            userGuruSignature = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE) || '';
+        }
+        if (!userGuruSignature.trim()) {
+            this.uiController.showStatus('No guru signature found. Please set your signature first.', 'error');
+            return;
+        }
+
+        // Find all rows with the same Player 1 deck (total for this deck)
+        const allDeckRows = this.allRows.filter(row => row.player1 === player1Deck);
+        // Find all unclaimed rows with the same Player 1 deck
+        const rowsToClaim = allDeckRows.filter(row => {
+            let sig = '';
+            switch (this.currentGuruColor) {
+                case 'red': sig = row.redSignature; break;
+                case 'blue': sig = row.blueSignature; break;
+                case 'green': sig = row.greenSignature; break;
+            }
+            return !sig || sig.trim() === '';
+        });
+
+        console.log(`🎯 Found ${allDeckRows.length} matches for deck "${player1Deck}" (${rowsToClaim.length} unclaimed)`);
+
+        if (allDeckRows.length === 0) {
+            this.uiController.showStatus('No matches found for this deck.', 'error');
+            return;
+        }
+
+        if (rowsToClaim.length === 0) {
+            this.uiController.showStatus(`All ${allDeckRows.length} matches for this deck are already claimed.`, 'error');
+            return;
+        }
+
+        // Prepare batch updates
+        const updates = {
+            updates: rowsToClaim.map(row => {
+                const signatureColIndex = this.getCurrentGuruColIndex('signature');
+                return {
+                    sheetId: row.sheetId,
+                    row: row.originalRowIndex + 1,
+                    col: signatureColIndex + 1,
+                    value: userGuruSignature,
+                    expectedValue: '',
+                    valueType: 'string',
+                    isMergedGuruUpdate: true,
+                    guruSheetIds: this.currentData.sheets.find(s => s.sheetTitle === 'Merged Gurus')?.guruSheetIds
+                };
+            })
+        };
+
+        try {
+            this.uiController.showStatus(`Claiming ${rowsToClaim.length} of ${allDeckRows.length} matches for deck...`, 'loading');
+            const result = await this.sheetsAPI.checkedUpdateSheetData(this.currentData.sheetId, updates);
+
+            // Update local data for only those that were actually claimed
+            let actuallyClaimed = 0;
+            if (result && result.updatedCells) {
+                // Only update local data for rows that were not skipped
+                const claimedRows = [];
+                // Build a set of claimed (row,col) for fast lookup
+                const claimedSet = new Set(
+                    updates.updates
+                        .map((u, i) => result.skipped && result.skipped.some(s => s.row === u.row && s.col === u.col) ? null : i)
+                        .filter(i => i !== null)
+                );
+                rowsToClaim.forEach((row, i) => {
+                    // Find the matching row in this.allRows by originalRowIndex and sheetId
+                    const match = this.allRows.find(r => r.originalRowIndex === row.originalRowIndex && r.sheetId === row.sheetId);
+                    if (!match) return;
+                    if (claimedSet.has(i)) {
+                        switch (this.currentGuruColor) {
+                            case 'red': match.redSignature = userGuruSignature; break;
+                            case 'blue': match.blueSignature = userGuruSignature; break;
+                            case 'green': match.greenSignature = userGuruSignature; break;
+                        }
+                        actuallyClaimed++;
+                    } else {
+                        // This row is claimed, set the signature to a placeholder
+                        switch (this.currentGuruColor) {
+                            case 'red': match.redSignature = 'unknown'; break;
+                            case 'blue': match.blueSignature = 'unknown'; break;
+                            case 'green': match.greenSignature = 'unknown'; break;
+                        }
+                    }
+                });
+            }
+
+            this.uiController.showStatus(`Claimed ${actuallyClaimed} of ${allDeckRows.length} matches for this deck.`, 'success');
+            console.log(`🎯 Claimed ${actuallyClaimed} matches for deck "${player1Deck}" (${allDeckRows.length} total)`);
+            console.log('🎯 Updated local data:', this.allRows.filter(r => r.player1 === player1Deck));
+            await this.showCurrentRow();
+
+        } catch (error) {
+            console.error('Error claiming deck matches:', error);
+            this.uiController.showStatus(`Error claiming deck matches: ${error.message}`, 'error');
+        }
     }
 
     /**
@@ -1792,9 +1926,7 @@ export class GuruAnalysisInterface {
             console.log('No deckNotesMap available');
             return;
         }
-        
-        console.log('Available deck notes:', Array.from(this.deckNotesMap.keys()));
-        
+                
         if (!this.deckNotesMap.has(deckString)) {
             console.log('No deck notes found for:', deckString);
             return;

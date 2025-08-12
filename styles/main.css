@@ -399,12 +399,17 @@ section h2, .login-section h2 {
     font-weight: 600;
 }
 
-/* Status message */
+/* Status message, located in the top center */
 .status-message {
     padding: 10px;
     border-radius: 4px;
     margin-top: 10px;
     display: none;
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
 }
 
 .status-message.success {

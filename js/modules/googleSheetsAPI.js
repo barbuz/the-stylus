@@ -370,58 +370,54 @@ export class GoogleSheetsAPI {
                 });
             }
 
-            // Get current values from sheets to check against expected values
-            const checkResults = [];
+            // Get all sheet metadata once
+            const metadata = await this.getSheetMetadata(sheetId);
+
+            // Build A1 ranges and map to checks
+            const ranges = [];
+            const checkToRange = [];
             for (const check of valuesToCheck) {
-                // Get the sheet name for this sheetId
-                const metadata = await this.getSheetMetadata(sheetId);
                 const targetSheet = metadata.sheets.find(s => s.sheetId === check.targetSheetId);
-                
                 if (!targetSheet) {
                     throw new Error(`Target sheet with ID ${check.targetSheetId} not found`);
                 }
-
-                // Convert column and row to A1 notation
                 const columnLetter = String.fromCharCode(65 + check.targetCol - 1); // A=65
                 const cellRange = `'${targetSheet.title}'!${columnLetter}${check.targetRow}`;
+                ranges.push(cellRange);
+                checkToRange.push({check, cellRange});
+            }
 
-                const response = await gapi.client.sheets.spreadsheets.values.get({
-                    spreadsheetId: sheetId,
-                    range: cellRange,
-                });
+            // Batch get all values
+            const batchResponse = await gapi.client.sheets.spreadsheets.values.batchGet({
+                spreadsheetId: sheetId,
+                ranges: ranges
+            });
 
-                const currentValue = response.result.values && response.result.values[0] && response.result.values[0][0] 
-                    ? response.result.values[0][0].toString() 
+            // Map results back to checks
+            const checkResults = checkToRange.map((item, idx) => {
+                const valueArr = batchResponse.result.valueRanges[idx]?.values;
+                const currentValue = valueArr && valueArr[0] && valueArr[0][0]
+                    ? valueArr[0][0].toString()
                     : '';
-
-                const expectedValue = check.originalUpdate.expectedValue || '';
-
-                checkResults.push({
-                    update: check.originalUpdate,
+                const expectedValue = item.check.originalUpdate.expectedValue || '';
+                return {
+                    update: item.check.originalUpdate,
                     currentValue,
                     expectedValue,
                     matches: currentValue === expectedValue,
-                    targetSheetId: check.targetSheetId,
-                    targetCol: check.targetCol,
-                    targetRow: check.targetRow
-                });
-            }
+                    targetSheetId: item.check.targetSheetId,
+                    targetCol: item.check.targetCol,
+                    targetRow: item.check.targetRow
+                };
+            });
 
-            // Check if all values match expectations
+            // Only proceed with updates that pass the check
+            const passedChecks = checkResults.filter(result => result.matches);
             const failedChecks = checkResults.filter(result => !result.matches);
-            if (failedChecks.length > 0) {
-                const errorDetails = failedChecks.map(check => 
-                    `Cell (${check.targetRow}, ${check.targetCol}): expected "${check.expectedValue}", found "${check.currentValue}"`
-                ).join('; ');
-                
-                throw new Error(`Checked update failed - values changed: ${errorDetails}`);
-            }
 
-            // All checks passed, proceed with the update using the existing updateSheetData logic
-            const updateRequests = checkResults.map(result => {
+            // Proceed with the update using the existing updateSheetData logic for passing updates only
+            const updateRequests = passedChecks.map(result => {
                 const update = result.update;
-                
-                // Determine userEnteredValue based on value type
                 let userEnteredValue;
                 if (update.valueType === 'number') {
                     userEnteredValue = { numberValue: parseFloat(update.value) };
@@ -430,7 +426,6 @@ export class GoogleSheetsAPI {
                 } else {
                     userEnteredValue = { stringValue: update.value.toString() };
                 }
-
                 return {
                     updateCells: {
                         start: {
@@ -448,22 +443,33 @@ export class GoogleSheetsAPI {
                 };
             });
 
-            const response = await gapi.client.sheets.spreadsheets.batchUpdate({
-                spreadsheetId: sheetId,
-                resource: {
-                    requests: updateRequests
-                }
-            });
+            let response = null;
+            if (updateRequests.length > 0) {
+                response = await gapi.client.sheets.spreadsheets.batchUpdate({
+                    spreadsheetId: sheetId,
+                    resource: {
+                        requests: updateRequests
+                    }
+                });
+            }
 
-            console.log('✅ Checked sheet update successful:', {
-                updatedCells: updates.updates.length,
-                responseReplies: response.result.replies?.length || 0
+            console.log('✅ Checked sheet update complete:', {
+                updatedCells: updateRequests.length,
+                skippedCells: failedChecks.length,
+                responseReplies: response?.result?.replies?.length || 0
             });
 
             return {
                 success: true,
-                updatedCells: updates.updates.length,
-                response: response.result
+                updatedCells: updateRequests.length,
+                skippedCells: failedChecks.length,
+                skipped: failedChecks.map(check => ({
+                    row: check.targetRow,
+                    col: check.targetCol,
+                    expectedValue: check.expectedValue,
+                    currentValue: check.currentValue
+                })),
+                response: response?.result
             };
 
         } catch (error) {
