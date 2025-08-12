@@ -218,11 +218,6 @@ class ThreeCardBlindGuruTool {
             // The loadSheet() method will be called automatically by the recent pods manager
         });
 
-        // Listen for refresh analysis events from the analysis interface
-        window.addEventListener('refreshAnalysis', () => {
-            this.refreshSheet();
-        });
-
         // Listen for user logout to optionally handle recent pods
         window.addEventListener('userLoggedOut', () => {
             // Note: We keep recent pods even after logout so they're available when user logs back in
@@ -313,7 +308,7 @@ class ThreeCardBlindGuruTool {
         
         // Show the sheet input section again
         this.uiController.showSheetInputSection();
-        this.uiController.showStatus('Analysis session ended. Load a sheet to start analyzing again.', 'info');
+        this.uiController.showStatus('Analysis session ended. Load a sheet to start analysing again.', 'info');
     }
 
     isValidGoogleSheetsUrl(url) {

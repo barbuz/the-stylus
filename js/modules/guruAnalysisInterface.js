@@ -16,6 +16,7 @@ export class GuruAnalysisInterface {
         this.currentRowIndex = 0;
         this.currentSheetIndex = 0;
         this.currentGuruColor = null;
+        this.numDiscrepancies = 0;
         // Store column indices as attributes for easier access
         this.redAnalysisColIndex = -1;
         this.blueAnalysisColIndex = -1;
@@ -91,7 +92,7 @@ export class GuruAnalysisInterface {
         }
 
         console.log(`Guru signature "${currentSignature}" not found in any column`);
-        throw new Error(`Guru signature "${currentSignature}" not found in any analysis column. Please check that you have matches assigned to analyze.`);
+        throw new Error(`Guru signature "${currentSignature}" not found in any analysis column. Please check that you have matches assigned to analyse.`);
     }
 
     bindEvents() {
@@ -104,7 +105,7 @@ export class GuruAnalysisInterface {
         document.getElementById('prev-btn').addEventListener('click', () => this.previousRow());
         document.getElementById('next-btn').addEventListener('click', () => this.nextRow());
         document.getElementById('skip-btn').addEventListener('click', () => this.skipToNextIncomplete());
-        document.getElementById('restart-analysis-btn').addEventListener('click', () => this.restartAnalysis());
+        document.getElementById('discrepancy-btn').addEventListener('click', () => this.skipToNextDiscrepancy());
 
         // Guru color selector
         this.bindGuruColorSelector();
@@ -255,15 +256,15 @@ export class GuruAnalysisInterface {
                 // Determine the current guru color from the actual sheet data
                 this.currentGuruColor = this.determineGuruColorFromSheet(sheetData);
                 console.log(`Determined guru color: ${this.currentGuruColor}`);
-            } catch (error) {
-                console.error('Error determining guru color:', error);
-                
+            } catch (error) {                
                 // Check if this is a "signature not found" error - offer color selection
                 if (error.message.includes('not found in any analysis column')) {
                     this.showGuruColorSelection(sheetData);
                     return;
                 } else {
-                    this.showGuruSignatureError(error.message);
+                    // For other errors, show a generic error message
+                    console.error('Error determining guru color:', error);
+                    this.uiController.showError('An error occurred while determining guru color');
                     return;
                 }
             }
@@ -299,7 +300,7 @@ export class GuruAnalysisInterface {
                 await this.showCurrentRow();
                 this.showCompletionMessage();
             } else {
-                // Find the first row with empty Guru Analysis or discrepancy
+                // Find the first row with empty Guru Analysis
                 this.currentRowIndex = this.findFirstEmptyAnalysis();
                 await this.showCurrentRow();
             }
@@ -430,6 +431,8 @@ export class GuruAnalysisInterface {
             throw new Error('One or more required columns are missing in the pod sheet. Please check the sheet structure.');
         }
 
+        let discrepancies = 0;
+
         // Process data rows (skip header)
         for (let rowIndex = 1; rowIndex < sheet.values.length; rowIndex++) {
             const row = sheet.values[rowIndex];
@@ -439,15 +442,24 @@ export class GuruAnalysisInterface {
 
             const player1 = row[player1ColIndex] || '';
             const player2 = row[player2ColIndex] || '';
-            const redAnalysis = row[this.redAnalysisColIndex] || '';
-            const blueAnalysis = row[this.blueAnalysisColIndex] || '';
-            const greenAnalysis = row[this.greenAnalysisColIndex] || '';
-            const redSignature = row[this.redSignatureColIndex] || '';
-            const blueSignature = row[this.blueSignatureColIndex] || '';
-            const greenSignature = row[this.greenSignatureColIndex] || '';
+            const redAnalysis = row[this.redAnalysisColIndex].toString().trim() || '';
+            const blueAnalysis = row[this.blueAnalysisColIndex].toString().trim() || '';
+            const greenAnalysis = row[this.greenAnalysisColIndex].toString().trim() || '';
+            const redSignature = row[this.redSignatureColIndex].toString().trim() || '';
+            const blueSignature = row[this.blueSignatureColIndex].toString().trim() || '';
+            const greenSignature = row[this.greenSignatureColIndex].toString().trim() || '';
 
             // Calculate outcome based on all guru analyses
             const outcomeValue = this.calculateOutcomeFromAnalyses(redAnalysis, blueAnalysis, greenAnalysis);
+
+            // Check for discrepancies for the current guru
+            const row_signatures = [redSignature, blueSignature, greenSignature];
+            if (row_signatures.includes(this.authManager.guruSignature)) {
+                // If the current guru signature is present, check for discrepancies
+                if (outcomeValue.toLowerCase().trim() === 'discrepancy') {
+                    discrepancies++;
+                }
+            }
 
             // Only include rows that have player data
             if (player1.trim() || player2.trim()) {
@@ -459,16 +471,19 @@ export class GuruAnalysisInterface {
                     player1: player1.trim(),
                     player2: player2.trim(),
                     outcomeValue: outcomeValue,
-                    redAnalysis: redAnalysis.toString().trim(),
-                    blueAnalysis: blueAnalysis.toString().trim(),
-                    greenAnalysis: greenAnalysis.toString().trim(),
-                    redSignature: redSignature.toString().trim(),
-                    blueSignature: blueSignature.toString().trim(),
-                    greenSignature: greenSignature.toString().trim(),
+                    redAnalysis: redAnalysis,
+                    blueAnalysis: blueAnalysis,
+                    greenAnalysis: greenAnalysis,
+                    redSignature: redSignature,
+                    blueSignature: blueSignature,
+                    greenSignature: greenSignature,
                     originalRowIndex: originalRowIndex // Use the original row index from unfiltered data
                 });
             }
         }
+
+        // Update the number of discrepancies
+        this.numDiscrepancies = discrepancies;
     }
 
     findColumnIndex(headerRow, possibleNames) {
@@ -513,7 +528,7 @@ export class GuruAnalysisInterface {
     }
 
     isAnalysisComplete() {
-        // Check if all rows have analysis and no discrepancies
+        // Check if all rows have analysis
         for (let i = 0; i < this.allRows.length; i++) {
             const row = this.allRows[i];
             
@@ -522,14 +537,9 @@ export class GuruAnalysisInterface {
             if (!currentAnalysis || currentAnalysis.trim() === '') {
                 return false;
             }
-            
-            // Check for discrepancies
-            if (row.outcomeValue && row.outcomeValue.toLowerCase().trim() === 'discrepancy') {
-                return false;
-            }
         }
         
-        return this.allRows.length > 0; // Only complete if we have rows to analyze
+        return this.allRows.length > 0; // Only complete if we have rows to analyse
     }
 
     findFirstEmptyAnalysis(startFromIndex = 0) {
@@ -554,17 +564,12 @@ export class GuruAnalysisInterface {
                 if (!currentAnalysis || currentAnalysis.trim() === '') {
                     return i;
                 }
-                
-                // Check for discrepancies
-                if (row.outcomeValue && row.outcomeValue.toLowerCase().trim() === 'discrepancy') {
-                    return i;
-                }
             }
         }
         
         // If no incomplete analysis found from startFromIndex to end, loop back and search from beginning to startFromIndex
         if (startFromIndex > 0) {
-            for (let i = 0; i < startFromIndex; i++) {
+            for (let i = 0; i < startFromIndex-1; i++) {
                 const row = this.allRows[i];
                 
                 // Check if this row has the current guru's signature
@@ -572,11 +577,6 @@ export class GuruAnalysisInterface {
                     // Check for empty analysis
                     const currentAnalysis = this.getCurrentGuruAnalysis(row);
                     if (!currentAnalysis || currentAnalysis.trim() === '') {
-                        return i;
-                    }
-                    
-                    // Check for discrepancies
-                    if (row.outcomeValue && row.outcomeValue.toLowerCase().trim() === 'discrepancy') {
                         return i;
                     }
                 }
@@ -597,7 +597,7 @@ export class GuruAnalysisInterface {
         
         // If no empty signature found from startFromIndex to end, loop back and search from beginning to startFromIndex
         if (startFromIndex > 0) {
-            for (let i = 0; i < startFromIndex; i++) {
+            for (let i = 0; i < startFromIndex-1; i++) {
                 const row = this.allRows[i];
                 
                 // Check if this row has empty guru signature (unclaimed)
@@ -608,6 +608,44 @@ export class GuruAnalysisInterface {
         }
         
         // If no empty signature or analysis found, return the start index or 0
+        return startFromIndex === 0 ? 0 : startFromIndex;
+    }
+
+    findFirstDiscrepancy(startFromIndex = 0) {
+        // Get the current guru signature for filtering
+        let currentSignature = '';
+        if (this.authManager && this.authManager.guruSignature) {
+            currentSignature = this.authManager.guruSignature;
+        } else {
+            currentSignature = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE) || '';
+        }
+        // Look for discrepancies that belong to current guru (have current guru's signature)
+        for (let i = startFromIndex; i < this.allRows.length; i++) {
+            const row = this.allRows[i];
+            // Check if this row has the current guru's signature
+            const rowSignatures = [row.redSignature, row.blueSignature, row.greenSignature];
+            if (rowSignatures.includes(currentSignature)) {
+                // Check for discrepancy
+                if (row.outcomeValue && row.outcomeValue.toLowerCase().trim() === 'discrepancy') {
+                    return i;
+                }
+            }
+        }
+        // If no discrepancies found from startFromIndex to end, loop back and search from beginning to startFromIndex
+        if (startFromIndex > 0) {
+            for (let i = 0; i < startFromIndex; i++) {
+                const row = this.allRows[i];
+                // Check if this row has the current guru's signature
+                const rowSignatures = [row.redSignature, row.blueSignature, row.greenSignature];
+                if (rowSignatures.includes(currentSignature)) {
+                    // Check for discrepancy
+                    if (row.outcomeValue && row.outcomeValue.toLowerCase().trim() === 'discrepancy') {
+                        return i;
+                    }
+                }
+            }
+        }
+        // If no discrepancies found, return the start index or 0
         return startFromIndex === 0 ? 0 : startFromIndex;
     }
 
@@ -673,7 +711,6 @@ export class GuruAnalysisInterface {
 
     async showCurrentRow() {
         if (this.currentRowIndex >= this.allRows.length) {
-            this.showCompletionMessage();
             return;
         }
 
@@ -879,8 +916,16 @@ export class GuruAnalysisInterface {
         document.getElementById('prev-btn').disabled = this.currentRowIndex === 0;
         document.getElementById('next-btn').disabled = this.currentRowIndex >= this.allRows.length - 1;
 
-        // Hide completion message
-        document.getElementById('completion-message').style.display = 'none';
+        // Show/hide discrepancy button based on number of discrepancies
+        const discrepancyButton = document.getElementById('discrepancy-btn');
+        if (discrepancyButton) {
+            if (this.numDiscrepancies > 0) {
+                discrepancyButton.style.display = 'inline-block';
+                discrepancyButton.textContent = `Next Discrepancy (${this.numDiscrepancies})`;
+            } else {
+                discrepancyButton.style.display = 'none';
+            }
+        }
 
         // Preload next match's card images in the background
         this.preloadNextMatchCards();
@@ -1008,7 +1053,7 @@ export class GuruAnalysisInterface {
         let nextRowIndex = this.findFirstEmptyAnalysis(this.currentRowIndex + 1);
         
         // If findFirstEmptyAnalysis returned the same or earlier index, it means we've wrapped around
-        // or there are no more rows to analyze, so don't preload
+        // or there are no more rows to analyse, so don't preload
         if (nextRowIndex <= this.currentRowIndex || nextRowIndex >= this.allRows.length) {
             console.log('🎯 No next match to preload (analysis complete or wrapped around)');
             return;
@@ -1668,18 +1713,6 @@ export class GuruAnalysisInterface {
         }
     }
 
-    async moveToNextIncompleteRow() {
-        // Check if analysis is complete first
-        if (this.isAnalysisComplete()) {
-            this.showCompletionMessage();
-            return;
-        }
-        
-        // Find the next empty/discrepancy starting from after current row
-        this.currentRowIndex = this.findFirstEmptyAnalysis(this.currentRowIndex + 1);
-        await this.showCurrentRow();
-    }
-
     async previousRow() {
         if (this.currentRowIndex > 0) {
             this.currentRowIndex--;
@@ -1688,7 +1721,7 @@ export class GuruAnalysisInterface {
     }
 
     async skipToNextIncomplete() {
-        // Find the next empty/discrepancy starting from after current row
+        // Find the next empty starting from after current row
         const nextIncompleteIndex = this.findFirstEmptyAnalysis(this.currentRowIndex + 1);
         
         // Check if we found a row after the current one
@@ -1701,14 +1734,15 @@ export class GuruAnalysisInterface {
         }
     }
 
-    async restartAnalysis() {
-        // Trigger the main refresh functionality by dispatching a custom event
-        window.dispatchEvent(new CustomEvent('refreshAnalysis'));
+    async skipToNextDiscrepancy() {
+        // Find the next row with discrepancy starting from after current row
+        const nextDiscrepancyIndex = this.findFirstDiscrepancy(this.currentRowIndex + 1);
+        this.currentRowIndex = nextDiscrepancyIndex;
+        await this.showCurrentRow();
     }
 
     showCompletionMessage() {
-        document.getElementById('completion-message').style.display = 'block';
-        this.uiController.showStatus('All rows analyzed! Great work!', 'success');
+        this.uiController.showStatus('All rows analysed! Great work!', 'success');
     }
 
     showNoDataMessage() {
@@ -1828,7 +1862,7 @@ export class GuruAnalysisInterface {
                     </div>
                 </div>
                 
-                <p class="color-selection-note">You can start analyzing matches by claiming unclaimed matches or work on matches already assigned to your chosen color.</p>
+                <p class="color-selection-note">You can start analysing matches by claiming unclaimed matches or work on matches already assigned to your chosen color.</p>
             </div>
         `;
         
@@ -1868,31 +1902,6 @@ export class GuruAnalysisInterface {
         this.showMatchTableModal();
     }
 
-    showGuruSignatureError(errorMessage) {
-        const analysisInterface = document.getElementById('guru-analysis-interface');
-        const spreadsheetUrl = `https://docs.google.com/spreadsheets/d/${this.currentData.sheetId}/edit`;
-        
-        analysisInterface.innerHTML = `
-            <div class="empty-state">
-                <h3>Guru Signature Not Found</h3>
-                <p>${errorMessage}</p>
-                <p>This could happen if:</p>
-                <ul>
-                    <li>You haven't been assigned any matches to analyze yet</li>
-                    <li>Your guru signature doesn't match any signatures in the sheet</li>
-                    <li>The sheet structure has changed</li>
-                </ul>
-                <p>Please check your guru signature settings and the sheet.</p>
-                <p><a href="${spreadsheetUrl}" target="_blank" rel="noopener noreferrer" class="spreadsheet-link">Open Spreadsheet in Google Sheets</a></p>
-                <button id="retry-load-btn" class="primary-btn" style="margin-top: 16px;">Retry</button>
-            </div>
-        `;
-        
-        // Add retry functionality
-        document.getElementById('retry-load-btn').addEventListener('click', () => {
-            window.dispatchEvent(new CustomEvent('refreshAnalysis'));
-        });
-    }
 
     getTotalRows() {
         return this.allRows.length;

@@ -358,6 +358,14 @@ section h2, .login-section h2 {
     transform: none;
 }
 
+.discrepancy-btn {
+    background-color: #e74c3c;
+    color: white;
+}
+.discrepancy-btn:hover {
+    background-color: #c0392b;
+}
+
 /* Guru Signature Section */
 .guru-signature-section {
     background: white;
@@ -1446,27 +1454,6 @@ section h2, .login-section h2 {
 .navigation-buttons button {
     min-width: 80px;
     flex-shrink: 0;
-}
-
-.completion-message {
-    text-align: center;
-    padding: 40px;
-    background: #d4edda;
-    border: 2px solid #c3e6cb;
-    border-radius: 12px;
-    color: #155724;
-    order: 2;
-}
-
-.completion-message h3 {
-    color: #155724;
-    margin-bottom: 15px;
-    font-size: 1.8rem;
-}
-
-.completion-message p {
-    margin-bottom: 20px;
-    font-size: 1.1rem;
 }
 
 /* Responsive design */
