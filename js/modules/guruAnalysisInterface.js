@@ -293,16 +293,17 @@ export class GuruAnalysisInterface {
             if (showMatchTable) {
                 // Show the match picker directly
                 this.showMatchTableModal();
-            }
-            else if (this.isAnalysisComplete()) {
-                // Even if complete, show the first row so user can see the data
-                this.currentRowIndex = 0;
-                await this.showCurrentRow();
-                this.showCompletionMessage();
             } else {
                 // Find the first row with empty Guru Analysis
-                this.currentRowIndex = this.findFirstEmptyAnalysis();
-                await this.showCurrentRow();
+                let firstEmpty = this.findFirstEmptyAnalysis();
+                if (firstEmpty == null) {
+                    this.currentRowIndex = 0;
+                    await this.showCurrentRow();
+                    this.showCompletionMessage();
+                } else {
+                    this.currentRowIndex = firstEmpty;
+                    await this.showCurrentRow();
+                }
             }
         }
     }
@@ -551,7 +552,7 @@ export class GuruAnalysisInterface {
             currentSignature = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE) || '';
         }
 
-        // Phase 1: Look for incomplete/discrepant rows that belong to current guru (have current guru's signature)
+        // Phase 1: Look for incomplete rows that belong to current guru (have current guru's signature)
         
         // First, find rows with current guru's signature that need analysis, starting from the given index
         for (let i = startFromIndex; i < this.allRows.length; i++) {
@@ -607,8 +608,8 @@ export class GuruAnalysisInterface {
             }
         }
         
-        // If no empty signature or analysis found, return the start index or 0
-        return startFromIndex === 0 ? 0 : startFromIndex;
+        // If no empty signature or analysis found, return null
+        return null;
     }
 
     findFirstDiscrepancy(startFromIndex = 0) {
@@ -1031,10 +1032,9 @@ export class GuruAnalysisInterface {
         // starting from after the current row
         let nextRowIndex = this.findFirstEmptyAnalysis(this.currentRowIndex + 1);
         
-        // If findFirstEmptyAnalysis returned the same or earlier index, it means we've wrapped around
-        // or there are no more rows to analyse, so don't preload
-        if (nextRowIndex <= this.currentRowIndex || nextRowIndex >= this.allRows.length) {
-            console.log('🎯 No next match to preload (analysis complete or wrapped around)');
+        // If findFirstEmptyAnalysis returned null, it means there are no more rows to analyse, so don't preload
+        if (nextRowIndex == null) {
+            console.log('🎯 No next match to preload (analysis complete)');
             return;
         }
         
@@ -1709,7 +1709,7 @@ export class GuruAnalysisInterface {
         const nextIncompleteIndex = this.findFirstEmptyAnalysis(this.currentRowIndex + 1);
         
         // Check if we found a row after the current one
-        if (nextIncompleteIndex != this.currentRowIndex) {
+        if (nextIncompleteIndex != null && nextIncompleteIndex != this.currentRowIndex) {
             this.currentRowIndex = nextIncompleteIndex;
             await this.showCurrentRow();
         } else {
