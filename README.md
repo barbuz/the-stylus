@@ -24,7 +24,7 @@ and continue guruing!
 - The app will load and parse the pod data
 - Only matches assigned to your guru signature will be displayed
 
-### 4. **Analyze Matches**
+### 4. **Analyse Matches**
 - View card images for both players
 - Use Win/Tie/Loss buttons to score matches
 - Navigate between matches with Previous/Next buttons

@@ -218,11 +218,6 @@ class ThreeCardBlindGuruTool {
             // The loadSheet() method will be called automatically by the recent pods manager
         });
 
-        // Listen for refresh analysis events from the analysis interface
-        window.addEventListener('refreshAnalysis', () => {
-            this.refreshSheet();
-        });
-
         // Listen for user logout to optionally handle recent pods
         window.addEventListener('userLoggedOut', () => {
             // Note: We keep recent pods even after logout so they're available when user logs back in
@@ -257,8 +252,7 @@ class ThreeCardBlindGuruTool {
             this.uiController.setLoadingState(true);
 
             const sheetId = this.extractSheetId(url);
-            const guruSignature = this.guruSignature.getSignature();
-            const sheetData = await this.sheetsAPI.getSheetData(sheetId, guruSignature);
+            const sheetData = await this.sheetsAPI.getSheetData(sheetId);
             
             this.currentSheetData = sheetData;
             this.currentSheetId = sheetId;
@@ -270,13 +264,9 @@ class ThreeCardBlindGuruTool {
             // Add to recent pods
             this.recentPodsManager.addRecentPod(sheetId, sheetData.title || 'Untitled Pod', url);
             
-            // Show filtering info
-            if (guruSignature && sheetData.sheets) {
-                const totalRows = this.analysisInterface.getTotalRows();
-                this.uiController.showStatus(`Found ${totalRows} rows to analyze for guru "${guruSignature}"`, 'success');
-            } else {
-                this.uiController.showStatus('Pod loaded successfully!', 'success');
-            }
+            // Show success message
+            const totalRows = this.analysisInterface.getTotalRows();
+            this.uiController.showStatus(`Pod loaded successfully - ${totalRows} rows available`, 'success');
             
         } catch (error) {
             console.error('Error loading pod:', error);
@@ -295,15 +285,14 @@ class ThreeCardBlindGuruTool {
         try {
             this.uiController.showStatus('Refreshing pod...', 'loading');
             
-            const guruSignature = this.guruSignature.getSignature();
-            const sheetData = await this.sheetsAPI.getSheetData(this.currentSheetId, guruSignature);
+            const sheetData = await this.sheetsAPI.getSheetData(this.currentSheetId);
             this.currentSheetData = sheetData;
             
             // Reload data into the analysis interface
             await this.analysisInterface.loadData(sheetData);
             
             const totalRows = this.analysisInterface.getTotalRows();
-            this.uiController.showStatus(`Refreshed - ${totalRows} rows to analyze`, 'success');
+            this.uiController.showStatus(`Refreshed - ${totalRows} rows available`, 'success');
             
         } catch (error) {
             console.error('Error refreshing pod:', error);
@@ -319,7 +308,7 @@ class ThreeCardBlindGuruTool {
         
         // Show the sheet input section again
         this.uiController.showSheetInputSection();
-        this.uiController.showStatus('Analysis session ended. Load a sheet to start analyzing again.', 'info');
+        this.uiController.showStatus('Analysis session ended. Load a sheet to start analysing again.', 'info');
     }
 
     isValidGoogleSheetsUrl(url) {
