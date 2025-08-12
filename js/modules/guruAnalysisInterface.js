@@ -2048,6 +2048,14 @@ export class GuruAnalysisInterface {
                 this.closeMatchTableModal();
             }
         });
+
+        // Auto-scroll to the current match row
+        requestAnimationFrame(() => {
+            const currentRow = table.querySelector('tr.current-row');
+            if (currentRow) {
+                currentRow.scrollIntoView({ block: 'center', behavior: 'auto' });
+            }
+        });
     }
 
     closeMatchTableModal() {
