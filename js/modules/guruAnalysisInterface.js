@@ -1210,6 +1210,11 @@ export class GuruAnalysisInterface {
             
             // Update button highlighting immediately based on the new analysis value
             this.highlightCurrentAnalysisButton(value);
+            // Update outcome display
+            const analysisElement = document.getElementById('current-analysis-value');
+            if (analysisElement) {
+                analysisElement.innerHTML = this.buildAnalysisDisplayWithOthers(currentRow, newOutcome);
+            }
             
             this.uiController.showStatus(`Analysis saved: ${this.getAnalysisLabel(value)}`, 'success');
             
