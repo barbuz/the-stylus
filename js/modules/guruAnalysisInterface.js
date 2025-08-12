@@ -793,12 +793,14 @@ export class GuruAnalysisInterface {
         const scoringButtons = document.querySelectorAll('.scoring-btn');
         const claimedMessage = document.getElementById('claimed-message');
         const claimButton = document.getElementById('claim-button');
+        const claimDeckButton = document.getElementById('claim-deck-button');
         const unclaimButton = document.getElementById('unclaim-button');
         
         if (isRowClaimedByAnotherGuru) {
             // Hide scoring buttons, claim button, and unclaim button, show claimed message
             scoringButtons.forEach(btn => btn.style.display = 'none');
             if (claimButton) claimButton.style.display = 'none';
+            if (claimDeckButton) claimDeckButton.style.display = 'none';
             if (unclaimButton) unclaimButton.style.display = 'none';
             
             // Get the current analysis value for the claimed row
@@ -873,8 +875,7 @@ export class GuruAnalysisInterface {
             scoringButtons.forEach(btn => btn.style.display = '');
             if (claimedMessage) claimedMessage.style.display = 'none';
             if (claimButton) claimButton.style.display = 'none';
-            const claimDeckBtn = document.getElementById('claim-deck-button');
-            if (claimDeckBtn) claimDeckBtn.style.display = 'none';
+            if (claimDeckButton) claimDeckButton.style.display = 'none';
 
             // Check if user has scored this match yet
             const currentAnalysis = this.getCurrentGuruAnalysis(currentRow);
@@ -974,7 +975,7 @@ export class GuruAnalysisInterface {
         }
 
         if (rowsToClaim.length === 0) {
-            this.uiController.showStatus(`All ${allDeckRows.length} matches for this deck are already claimed.`, 'error');
+            this.uiController.showStatus(`All ${allDeckRows.length} matches for this deck are already claimed.`, 'info');
             return;
         }
 
@@ -1294,8 +1295,16 @@ export class GuruAnalysisInterface {
                 }]
             };
 
-            await this.sheetsAPI.checkedUpdateSheetData(this.currentData.sheetId, updates);
-            
+            const result = await this.sheetsAPI.checkedUpdateSheetData(this.currentData.sheetId, updates);
+
+            if (result && result.skippedCells > 0) {
+                // Someone else claimed the match first
+                this.uiController.showStatus('Match was already claimed by someone else', 'info');
+                // Refresh the display to show the updated state
+                await this.reloadAllDataInBackground();
+                return;
+            }
+
             // Update local data with the new signature
             switch (this.currentGuruColor) {
                 case 'red':
@@ -1308,29 +1317,21 @@ export class GuruAnalysisInterface {
                     currentRow.greenSignature = userGuruSignature;
                     break;
             }
-            
+
             this.uiController.showStatus('Match claimed successfully!', 'success');
-            
+
             // Refresh the display to show scoring buttons now that the match is claimed
             await this.showCurrentRow();
-            
+
         } catch (error) {
             console.error('Error claiming match:', error);
-            
+
             // Reset claim button on error
             if (claimButton) {
                 claimButton.disabled = false;
                 claimButton.textContent = originalButtonText;
             }
-            
-            // Check if this was a race condition (someone else claimed it)
-            if (error.message.includes('values changed')) {
-                this.uiController.showStatus('Match was already claimed by someone else', 'error');
-                // Refresh the display to show the updated state
-                await this.reloadAllDataInBackground();
-            } else {
-                this.uiController.showStatus(`Error claiming match: ${error.message}`, 'error');
-            }
+            this.uiController.showStatus(`Error claiming match: ${error.message}`, 'error');
         }
     }
 
