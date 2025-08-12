@@ -955,27 +955,10 @@ export class GuruAnalysisInterface {
         }
 
         // Find all rows with the same Player 1 deck (total for this deck)
-        const allDeckRows = this.allRows.filter(row => row.player1 === player1Deck);
-        // Find all unclaimed rows with the same Player 1 deck
-        const rowsToClaim = allDeckRows.filter(row => {
-            let sig = '';
-            switch (this.currentGuruColor) {
-                case 'red': sig = row.redSignature; break;
-                case 'blue': sig = row.blueSignature; break;
-                case 'green': sig = row.greenSignature; break;
-            }
-            return !sig || sig.trim() === '';
-        });
-
-        console.log(`🎯 Found ${allDeckRows.length} matches for deck "${player1Deck}" (${rowsToClaim.length} unclaimed)`);
-
-        if (allDeckRows.length === 0) {
-            this.uiController.showStatus('No matches found for this deck.', 'error');
-            return;
-        }
+        const rowsToClaim = this.allRows.filter(row => row.player1 === player1Deck);
 
         if (rowsToClaim.length === 0) {
-            this.uiController.showStatus(`All ${allDeckRows.length} matches for this deck are already claimed.`, 'info');
+            this.uiController.showStatus(`No matches found for deck "${player1Deck}".`, 'error');
             return;
         }
 
@@ -997,46 +980,41 @@ export class GuruAnalysisInterface {
         };
 
         try {
-            this.uiController.showStatus(`Claiming ${rowsToClaim.length} of ${allDeckRows.length} matches for deck...`, 'loading');
+            this.uiController.showStatus(`Claiming ${rowsToClaim.length} matches for deck...`, 'loading');
             const result = await this.sheetsAPI.checkedUpdateSheetData(this.currentData.sheetId, updates);
 
             // Update local data for only those that were actually claimed
             let actuallyClaimed = 0;
             if (result && result.updatedCells) {
-                // Only update local data for rows that were not skipped
-                const claimedRows = [];
-                // Build a set of claimed (row,col) for fast lookup
-                const claimedSet = new Set(
-                    updates.updates
-                        .map((u, i) => result.skipped && result.skipped.some(s => s.row === u.row && s.col === u.col) ? null : i)
-                        .filter(i => i !== null)
-                );
                 rowsToClaim.forEach((row, i) => {
                     // Find the matching row in this.allRows by originalRowIndex and sheetId
                     const match = this.allRows.find(r => r.originalRowIndex === row.originalRowIndex && r.sheetId === row.sheetId);
                     if (!match) return;
-                    if (claimedSet.has(i)) {
+                    // Find the matching row in the skipped ones
+                    const skipped = result.skipped && result.skipped.find(s => s.row === row.originalRowIndex + 1);
+                    if (skipped) {
+                        // This row is already claimed, set the signature to the value from skipped
+                        switch (this.currentGuruColor) {
+                            case 'red': match.redSignature = skipped.currentValue; break;
+                            case 'blue': match.blueSignature = skipped.currentValue; break;
+                            case 'green': match.greenSignature = skipped.currentValue; break;
+                        }
+                    }
+                    else {
+                        // Successfully claimed this row, set the signature to user's guru signature
                         switch (this.currentGuruColor) {
                             case 'red': match.redSignature = userGuruSignature; break;
                             case 'blue': match.blueSignature = userGuruSignature; break;
                             case 'green': match.greenSignature = userGuruSignature; break;
                         }
                         actuallyClaimed++;
-                    } else {
-                        // This row is claimed, set the signature to a placeholder
-                        switch (this.currentGuruColor) {
-                            case 'red': match.redSignature = 'unknown'; break;
-                            case 'blue': match.blueSignature = 'unknown'; break;
-                            case 'green': match.greenSignature = 'unknown'; break;
-                        }
                     }
                 });
             }
 
-            this.uiController.showStatus(`Claimed ${actuallyClaimed} of ${allDeckRows.length} matches for this deck.`, 'success');
-            console.log(`🎯 Claimed ${actuallyClaimed} matches for deck "${player1Deck}" (${allDeckRows.length} total)`);
-            console.log('🎯 Updated local data:', this.allRows.filter(r => r.player1 === player1Deck));
-            await this.showCurrentRow();
+            this.uiController.showStatus(`Claimed ${actuallyClaimed} of ${rowsToClaim.length} matches for this deck.`, 'success');
+            console.log(`🎯 Claimed ${actuallyClaimed} matches for deck "${player1Deck}" (${rowsToClaim.length} total)`);
+            this.showCurrentRow();
 
         } catch (error) {
             console.error('Error claiming deck matches:', error);
