@@ -41,14 +41,9 @@ export class AuthManager {
                         return;
                     }
                     const idToken = response.id_token;
-                    let sub = null;
-                    // If an ID token is provided, extract the user ID (sub)
-                    if (idToken) {
-                        const payload = JSON.parse(atob(idToken.split('.')[1]));
-                        sub = payload.sub;
-                    }
+                    console.log('OAuth response:', response);
                     console.log('✅ OAuth token received');
-                    this.handleAuthSuccess(response.access_token, sub, response.expires_in);
+                    this.handleAuthSuccess(response.access_token, response.expires_in);
                 }
             });
             
@@ -62,30 +57,51 @@ export class AuthManager {
     }
 
 
-    async handleAuthSuccess(accessToken, sub, expiresIn = 3600) {
+    async handleAuthSuccess(accessToken, expiresIn = 3600) {
+        localStorage.setItem(CONFIG.STORAGE_KEYS.LAST_LOGIN, Date.now().toString());
         try {
             // Set access token for gapi client
             gapi.client.setToken({
                 access_token: accessToken
             });
             
-            // Create minimal user object without profile data
-            this.user = {
-                accessToken: accessToken
-            };
-            this.isAuthenticated = true;
-            
-            // Store tokens for persistence
-            this.saveTokens(accessToken, expiresIn);
+            let userEmail = null;
+            if (this.shouldRememberUser()) {
+                // get email address from localStorage if available
+                userEmail = localStorage.getItem(CONFIG.STORAGE_KEYS.USER_ID);
 
-            // Save user sub if they want to be remembered
-            if (this.shouldRememberUser() && sub) {
-                localStorage.setItem(CONFIG.STORAGE_KEYS.USER_ID, sub);
-                localStorage.setItem(CONFIG.STORAGE_KEYS.LAST_LOGIN, Date.now().toString());
+                if (!userEmail) {
+                    console.log('🔐 No user email found in localStorage, fetching from Google UserInfo API');
+                }
+                // Fetch user email from Google UserInfo endpoint
+                try {
+                    const userInfoResp = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`
+                        }
+                    });
+                    if (userInfoResp.ok) {
+                        const userInfo = await userInfoResp.json();
+                        userEmail = userInfo.email || null;
+                    }
+                    // If we successfully fetched the email, save it to localStorage
+                    localStorage.setItem(CONFIG.STORAGE_KEYS.USER_ID, userEmail);
+                } catch (e) {
+                    console.warn('Could not fetch user email:', e);
+                }
             } else {
                 localStorage.removeItem(CONFIG.STORAGE_KEYS.USER_ID);
-                localStorage.removeItem(CONFIG.STORAGE_KEYS.LAST_LOGIN);
             }
+
+            // Create minimal user object with email if available
+            this.user = {
+                accessToken: accessToken,
+                email: userEmail
+            };
+            this.isAuthenticated = true;
+
+            // Store tokens for persistence
+            this.saveTokens(accessToken, expiresIn);
             
             // Initialize user preferences in Google Drive
             await this.initializeUserPreferences();

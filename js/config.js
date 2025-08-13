@@ -11,7 +11,7 @@ export const CONFIG = {
     SCOPES: [
         'https://www.googleapis.com/auth/spreadsheets',
         'https://www.googleapis.com/auth/drive.appdata',
-        'openid'
+        'https://www.googleapis.com/auth/userinfo.email'
     ].join(' '),
     
     // Application settings
