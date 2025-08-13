@@ -53,6 +53,7 @@ export class GoogleSheetsAPI {
             if (guruSheets.length > 0) {
                 const mergedGuruSheet = await this.mergeGuruSheets(sheetId, guruSheets);
                 allSheetsData.push(mergedGuruSheet);
+                console.log("Merged Guru Sheets:", mergedGuruSheet);
             }
 
             return {
@@ -161,6 +162,8 @@ export class GoogleSheetsAPI {
             }
         }
 
+        const hidden = sortedSheets.some(sheet => sheet.hidden);
+
         return {
             sheetTitle: 'Merged Gurus',
             sheetId: redGuruSheet.sheetId, // Use Red Gurus sheet ID as primary
@@ -168,6 +171,7 @@ export class GoogleSheetsAPI {
             range: `'${redGuruSheet.title}'!A1:I${mergedValues.length}`,
             majorDimension: 'ROWS',
             columnMapping: this.getMergedGuruColumnMapping(),
+            hidden: hidden,
             guruSheetIds: {
                 red: sortedSheets.find(s => s.title.toLowerCase().includes('red'))?.sheetId,
                 blue: sortedSheets.find(s => s.title.toLowerCase().includes('blue'))?.sheetId,
@@ -494,7 +498,8 @@ export class GoogleSheetsAPI {
                 sheets: response.result.sheets.map(sheet => ({
                     title: sheet.properties.title,
                     sheetId: sheet.properties.sheetId,
-                    gridProperties: sheet.properties.gridProperties
+                    gridProperties: sheet.properties.gridProperties,
+                    hidden: !!sheet.properties.hidden
                 }))
             };
         } catch (error) {
