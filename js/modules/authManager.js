@@ -9,6 +9,7 @@ export class AuthManager {
         this.tokenClient = null;
         this.initialized = false;
         this.userPreferences = new UserPreferences();
+        this.reauthTimer = null;
     }
 
     async initialize() {
@@ -102,6 +103,9 @@ export class AuthManager {
 
             // Store tokens for persistence
             this.saveTokens(accessToken, expiresIn);
+
+            // Set up automatic silent re-auth timer
+            this.setupReauthTimer(expiresIn);
             
             // Initialize user preferences in Google Drive
             await this.initializeUserPreferences();
@@ -228,6 +232,29 @@ export class AuthManager {
         localStorage.removeItem(CONFIG.STORAGE_KEYS.ACCESS_TOKEN);
         localStorage.removeItem(CONFIG.STORAGE_KEYS.TOKEN_EXPIRY);
         console.log('🗑️ Cleared stored authentication');
+
+        // Clear any pending re-auth timer
+        if (this.reauthTimer) {
+            clearTimeout(this.reauthTimer);
+            this.reauthTimer = null;
+        }
+    }
+
+    /**
+     * Set up a timer to trigger silent re-auth before token expiry
+     * @param {number} expiresIn - seconds until token expiry
+     */
+    setupReauthTimer(expiresIn) {
+        // Clear any existing timer
+        if (this.reauthTimer) {
+            clearTimeout(this.reauthTimer);
+        }
+        // Re-auth 2 minutes before expiry, but not less than 10 seconds from now
+        const reauthMs = Math.max((expiresIn - 120) * 1000, 10000);
+        this.reauthTimer = setTimeout(async () => {
+            console.log('⏰ Token expiring soon, attempting silent re-auth...');
+            await this.attemptAutoReauth();
+        }, reauthMs);
     }
 
     async attemptAutoReauth() {
@@ -324,6 +351,9 @@ export class AuthManager {
                     // Show login screen when auto re-auth fails
                     this.showLoginScreen();
                     return false;
+                } else {
+                    // Set up automatic silent re-auth timer
+                    this.setupReauthTimer((storedTokens.expiryTime - Date.now()) / 1000);
                 }
                 
                 // Try to validate the token using stored tokens only
