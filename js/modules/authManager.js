@@ -269,7 +269,7 @@ export class AuthManager {
                                 resolve(false);
                             } else {
                                 console.log('✅ Silent auto re-auth successful');
-                                this.handleAuthSuccess(response.access_token, null, response.expires_in);
+                                this.handleAuthSuccess(response.access_token, response.expires_in);
                                 resolve(true);
                             }
                         }
