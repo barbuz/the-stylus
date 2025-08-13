@@ -37,7 +37,7 @@ export class GuruSignature {
      * Manually reload signature from preferences (called after preferences are loaded)
      */
     reloadFromPreferences() {
-        const storedSignature = localStorage.getItem(this.storageKey);
+        const storedSignature = this.authManager ? this.authManager.guruSignature : localStorage.getItem(this.storageKey);
         console.log('GuruSignature: Reloading from preferences, found:', storedSignature);
         
         if (storedSignature) {

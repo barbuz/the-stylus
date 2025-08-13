@@ -143,8 +143,8 @@ export class AuthManager {
             const guruSignature = await this.userPreferences.getGuruSignature();
             if (guruSignature) {
                 this.guruSignature = guruSignature;
-                this.updateGuruSignature(guruSignature);
-                
+                this.renderAuthSection();
+
                 // Dispatch event to notify other components
                 window.dispatchEvent(new CustomEvent('guruSignatureLoaded', {
                     detail: { signature: guruSignature }
@@ -168,19 +168,16 @@ export class AuthManager {
 
     async saveGuruSignature(signature) {
         this.guruSignature = signature;
-        
+
+        // Save to localStorage first
+        localStorage.setItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE, signature);
         try {
             // Save to Google appData if user preferences are initialized
             if (this.userPreferences.isInitialized) {
                 await this.userPreferences.setGuruSignature(signature);
-            } else {
-                // Fall back to localStorage
-                localStorage.setItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE, signature);
             }
         } catch (error) {
-            console.error('Error saving guru signature:', error);
-            // Fall back to localStorage
-            localStorage.setItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE, signature);
+            console.error('Error saving guru signature:', error);            
         }
     }
 

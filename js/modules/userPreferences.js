@@ -217,9 +217,11 @@ export class UserPreferences {
                 await this.loadPreferences();
             }
 
-            this.cache.guruSignature = signature;
-            await this.savePreferences(this.cache);
-            
+            if (this.cache.guruSignature !== signature) {
+                this.cache.guruSignature = signature;
+                await this.savePreferences(this.cache);
+
+            }
             // Also update localStorage as backup
             localStorage.setItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE, signature);
         } catch (error) {
