@@ -4,53 +4,31 @@
  */
 import { CONFIG } from '../config.js';
 
+
 export class GuruSignature {
-    constructor() {
+    constructor(authManager) {
         this.storageKey = CONFIG.STORAGE_KEYS.GURU_SIGNATURE;
-        this.authManager = null; // Will be set externally
+        this.authManager = authManager;
         this.callbacks = {
             onSignatureSet: [],
             onSignatureChanged: []
         };
-        this.init();
-    }
-
-    init() {
+        this.signature = null; // In-memory signature for this session
+        this.initialized = false;
         this.bindEvents();
-        this.loadStoredSignature();
-        
-        // Listen for requests to change guru signature
-        window.addEventListener('requestGuruSignatureChange', () => {
-            this.changeSignature();
-        });
     }
 
-    /**
-     * Set reference to auth manager for updating the header
-     * @param {AuthManager} authManager - AuthManager instance
-     */
-    setAuthManager(authManager) {
-        this.authManager = authManager;
-    }
-
-    /**
-     * Manually reload signature from preferences (called after preferences are loaded)
-     */
-    reloadFromPreferences() {
-        const storedSignature = this.authManager ? this.authManager.guruSignature : localStorage.getItem(this.storageKey);
-        console.log('GuruSignature: Reloading from preferences, found:', storedSignature);
-        
-        if (storedSignature) {
-            // Update auth manager header display
-            if (this.authManager) {
-                this.authManager.updateGuruSignature(storedSignature);
-            }
-            
-            this.displaySignature(storedSignature);
-            this.hideSignatureSection(); // Hide the input section
+    async initSignature(signature) {
+        if (signature) {
+            this.signature = signature;
+            this.displaySignature(this.signature);
+            this.hideSignatureSection();
             this.showSheetInputSection();
-            this.notifyCallbacks('onSignatureSet', storedSignature);
+            this.notifyCallbacks('onSignatureSet', this.signature);
+        } else {
+            this.showSignatureSection();
         }
+        this.initialized = true;
     }
 
     bindEvents() {
@@ -73,25 +51,13 @@ export class GuruSignature {
                 }
             });
         }
+
+        // Listen for requests to change guru signature
+        window.addEventListener('requestGuruSignatureChange', () => {
+            this.changeSignature();
+        });
     }
 
-    loadStoredSignature() {
-        const storedSignature = localStorage.getItem(this.storageKey);
-        
-        if (storedSignature) {
-            // Update auth manager header display
-            if (this.authManager) {
-                this.authManager.updateGuruSignature(storedSignature);
-            }
-            
-            this.displaySignature(storedSignature);
-            this.hideSignatureSection(); // Hide the input section
-            this.showSheetInputSection();
-            this.notifyCallbacks('onSignatureSet', storedSignature);
-        } else {
-            this.showSignatureSection();
-        }
-    }
 
     async setSignature(signature = null) {
         const signatureInput = document.getElementById('guru-signature');
@@ -108,14 +74,15 @@ export class GuruSignature {
         }
 
         await this.saveSignature(finalSignature);
-        
+        this.signature = finalSignature;
+
         // Update auth manager header display
         if (this.authManager) {
             this.authManager.updateGuruSignature(finalSignature);
         }
-        
+
         this.displaySignature(finalSignature);
-        this.hideSignatureSection(); // Hide the input section
+        this.hideSignatureSection();
         this.showSheetInputSection();
         this.notifyCallbacks('onSignatureSet', finalSignature);
     }
@@ -138,10 +105,12 @@ export class GuruSignature {
             // Fall back to localStorage if authManager not available
             localStorage.setItem(this.storageKey, signature);
         }
+        // Always update in-memory value
+        this.signature = signature;
     }
 
     getSignature() {
-        return localStorage.getItem(this.storageKey);
+        return this.signature;
     }
 
     displaySignature(signature) {
@@ -156,11 +125,17 @@ export class GuruSignature {
 
     showSignatureSection() {
         const signatureSection = document.getElementById('guru-signature-section');
+        const guruSignatureInput = document.getElementById('guru-signature');
         const sheetInputSection = document.getElementById('sheet-input-section');
         const guruInfo = document.getElementById('guru-info');
         
         if (signatureSection) {
             signatureSection.style.display = 'block';
+        }
+        if (guruSignatureInput) {
+            guruSignatureInput.value = this.getSignature() || '';
+            guruSignatureInput.focus();
+            guruSignatureInput.select();
         }
         if (sheetInputSection) {
             sheetInputSection.style.display = 'none';
@@ -213,13 +188,14 @@ export class GuruSignature {
 
     clearSignature() {
         localStorage.removeItem(this.storageKey);
+        this.signature = null;
         this.showSignatureSection();
         document.getElementById('guru-signature').value = '';
         this.notifyCallbacks('onSignatureChanged', null);
     }
 
     hasSignature() {
-        return !!this.getSignature();
+        return !!this.signature;
     }
 
     // Event system for other modules to listen to signature changes

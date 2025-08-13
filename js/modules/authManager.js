@@ -154,17 +154,9 @@ export class AuthManager {
             console.log('✅ User preferences initialized from Google appData');
         } catch (error) {
             console.error('Error initializing user preferences:', error);
-            // Fall back to localStorage
-            this.loadGuruSignature();
         }
     }
 
-    loadGuruSignature() {
-        const stored = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE);
-        if (stored) {
-            this.guruSignature = stored;
-        }
-    }
 
     async saveGuruSignature(signature) {
         this.guruSignature = signature;
@@ -321,9 +313,6 @@ export class AuthManager {
                 await this.initialize();
             }
             
-            // Load guru signature early, regardless of auth status
-            this.loadGuruSignature();
-            
             // First, check for stored tokens in localStorage
             const storedTokens = this.getStoredTokens();
             if (storedTokens) {
@@ -364,7 +353,6 @@ export class AuthManager {
                         accessToken: storedTokens.accessToken
                     };
                     this.isAuthenticated = true;
-                    this.loadGuruSignature();
                     
                     // Initialize user preferences for restored session
                     await this.initializeUserPreferences();

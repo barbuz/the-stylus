@@ -9,15 +9,12 @@ import { CONFIG } from './config.js';
 class ThreeCardBlindGuruTool {
     constructor() {
         this.authManager = new AuthManager();
-        this.guruSignature = new GuruSignature();
+        this.guruSignature = new GuruSignature(this.authManager);
         this.sheetsAPI = new GoogleSheetsAPI(this.authManager);
         this.uiController = new UIController();
         this.analysisInterface = new GuruAnalysisInterface(this.sheetsAPI, this.uiController, this.authManager);
         this.recentPodsManager = new RecentPodsManager();
-        
-        // Set auth manager reference in guru signature
-        this.guruSignature.setAuthManager(this.authManager);
-        
+
         this.currentSheetData = null;
         this.currentSheetId = null;
         this.handlersSetup = false; // Track if handlers have been set up
@@ -55,8 +52,6 @@ class ThreeCardBlindGuruTool {
                     this.handlersSetup = true;
                 }
                 
-                // Load user preferences if authenticated
-                this.loadGuruSignature();
                 
                 // Initialize user preferences and connect to recent pods manager
                 if (this.authManager.userPreferences && this.authManager.userPreferences.isInitialized) {
@@ -105,30 +100,18 @@ class ThreeCardBlindGuruTool {
             
             // Initialize user preferences and connect to recent pods manager
             if (this.authManager.userPreferences && this.authManager.userPreferences.isInitialized) {
+                this.guruSignature.initSignature(await this.authManager.userPreferences.getGuruSignature());
                 this.recentPodsManager.setUserPreferences(this.authManager.userPreferences);
                 // Reload recent pods from Google appData after login
                 await this.recentPodsManager.loadRecentPods();
                 this.recentPodsManager.renderRecentPods();
             }
-            
-            // Load guru signature if available
-            this.loadGuruSignature();
-            
-            // Show success message
             if (this.uiController && this.uiController.showStatus) {
                 this.uiController.showStatus('Welcome! Ready to load pod sheet', 'success');
             } else {
                 console.log('Welcome! Ready to load pod sheet');
             }
         });
-
-        // Listen for guru signature loaded from Drive
-        window.addEventListener('guruSignatureLoaded', (event) => {
-            console.log('Guru signature loaded from Drive:', event.detail.signature);
-            // Update UI to show the loaded signature
-            this.guruSignature.reloadFromPreferences();
-        });
-
         // Clear preferences on logout
         window.addEventListener('userLoggedOut', () => {
             this.clearLocalPreferences();
@@ -164,28 +147,12 @@ class ThreeCardBlindGuruTool {
         localStorage.removeItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE);
     }
 
-    loadGuruSignature() {
-        // Load guru signature from localStorage
-        const guruSignature = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE);
-        if (guruSignature) {
-            console.log('Loading guru signature:', guruSignature);
-            this.guruSignature.displaySignature(guruSignature);
-            this.guruSignature.hideSignatureSection();
-        }
-    }
-
     setupGuruSignatureHandlers() {
         // Listen for signature events
         this.guruSignature.onSignatureSet((signature) => {
             console.log('Guru signature set:', signature);
             this.uiController.showStatus(`Welcome, ${signature}! Ready to edit pod sheets.`, 'success');
-            // Update auth manager to show signature in header (only if different)
-            const currentSignature = this.authManager.getCurrentGuruSignature?.() || '';
-            if (currentSignature !== signature) {
-                this.authManager.updateGuruSignature(signature);
-            }
         });
-
         this.guruSignature.onSignatureChanged((signature) => {
             console.log('Guru signature changed:', signature);
             if (!signature) {
