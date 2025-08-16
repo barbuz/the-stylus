@@ -106,11 +106,6 @@ class ThreeCardBlindGuruTool {
                 await this.recentPodsManager.loadRecentPods();
                 this.recentPodsManager.renderRecentPods();
             }
-            if (this.uiController && this.uiController.showStatus) {
-                this.uiController.showStatus('Welcome! Ready to load pod sheet', 'success');
-            } else {
-                console.log('Welcome! Ready to load pod sheet');
-            }
         });
         // Clear preferences on logout
         window.addEventListener('userLoggedOut', () => {

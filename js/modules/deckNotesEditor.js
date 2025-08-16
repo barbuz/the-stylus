@@ -11,7 +11,7 @@ export class DeckNotesEditor {
         this.clocksFilled = false; // Track if all clocks are filled
     }
 
-    show(notesData) {
+    show(notesData, spreadsheetTitle) {
         this.notesData = notesData;
         if (!notesData || !notesData.values || notesData.values.length === 0) {
             return this.uiController.showStatus('No deck notes found. Check the spreadsheet.', 'error');
@@ -48,10 +48,11 @@ export class DeckNotesEditor {
                         <button id="deck-notes-close-btn" class="exit-btn">X</button>
                     </div>
                     <h3>Deck Notes Editor</h3>
-                    <div class="deck-notes-editor-publish">
-                        <button id="deck-notes-publish-btn" class="primary-btn">Start guruing</button>
-                    </div>
                 </div>
+                <div class="deck-notes-editor-publish">
+                    <button id="deck-notes-publish-btn" class="primary-btn">Start guruing</button>
+                </div>
+                <h4>${spreadsheetTitle}</h4>
                 <p>All goldfish clocks must be filled before guruing can begin. Add notes as needed.</p>
                 <table id="deck-notes-table" class="deck-notes-table">
                     <thead>

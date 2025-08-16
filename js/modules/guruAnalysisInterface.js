@@ -1775,7 +1775,7 @@ export class GuruAnalysisInterface {
             this.deckNotesEditor.sheetsAPI = this.sheetsAPI;
             this.deckNotesEditor.spreadsheetID = this.currentData.sheetId;
         }
-        this.deckNotesEditor.show(notesData);
+        this.deckNotesEditor.show(notesData, this.currentData.title);
     }
 
     calculateColorStatistics(sheetData) {
