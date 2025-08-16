@@ -14,6 +14,19 @@ export class ScryfallAPI {
     }
 
     /**
+     * Get the Scryfall search URL for a specific card name
+     * @param {string} cardName - The exact name of the card
+     * @returns {string} Scryfall URL for the card
+     * */
+    getCardUrl(cardName, exactMatch = true) {
+        if (exactMatch) {
+            return `https://scryfall.com/search?q=!${encodeURIComponent('"' + cardName + '"')}`;
+        } else {
+            return `https://scryfall.com/search?q=${encodeURIComponent(cardName)}`;
+        }
+    }
+
+    /**
      * Enforce rate limiting by waiting between requests
      * Ensures 50-100ms delay between API requests to respect Scryfall guidelines
      */
@@ -59,7 +72,9 @@ export class ScryfallAPI {
         
         // Check cache first - if we have the image cached, return it directly
         if (this.cache.has(trimmedName)) {
-            return this.cache.get(trimmedName);
+            // Return a copy of the cached image to avoid mutation
+            const cachedImage = this.cache.get(trimmedName);
+            return cachedImage.cloneNode();
         }
 
         try {
@@ -70,8 +85,7 @@ export class ScryfallAPI {
             const imageUrl = `${this.baseUrl}/cards/named?exact=${encodedName}&format=image&version=normal`;
             
             // Load and cache the actual image
-            const loadedImage = await this.loadAndCacheImage(imageUrl);
-            this.cache.set(trimmedName, loadedImage);
+            const loadedImage = await this.loadAndCacheImage(trimmedName, imageUrl);
             
             return loadedImage;
         } catch (error) {
@@ -82,16 +96,18 @@ export class ScryfallAPI {
 
     /**
      * Load an image and return the loaded Image object
+     * @param {string} name - Name of the card (for caching purposes)
      * @param {string} url - Image URL to load
      * @returns {Promise<Image>} Loaded Image object
      */
-    async loadAndCacheImage(url) {
+    async loadAndCacheImage(name, url) {
         return new Promise((resolve, reject) => {
             const img = new Image();
             img.crossOrigin = 'anonymous'; // Enable CORS for cross-origin images
+            img.src = url;
             img.onload = () => resolve(img);
             img.onerror = () => reject(new Error('Image not found'));
-            img.src = url;
+            this.cache.set(name, img); // Cache the image immediately
         });
     }
 
@@ -234,9 +250,8 @@ export class ScryfallAPI {
                 const imageUrl = `${this.baseUrl}/cards/named?exact=${encodedName}&format=image&version=normal`;
                 
                 // For preloading, load and cache the actual image
-                const loadedImage = await this.loadAndCacheImage(imageUrl);
-                this.cache.set(cardName, loadedImage);
-                
+                const loadedImage = await this.loadAndCacheImage(cardName, imageUrl);
+
                 if (!silent) console.log(`✅ Preloaded: ${cardName}`);
                 
             } catch (error) {

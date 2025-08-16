@@ -15,7 +15,7 @@ body {
 .container {
     max-width: 1200px;
     margin: 0 auto;
-    padding: 20px;
+    padding: 0px 20px;
 }
 
 /* Header */
@@ -356,6 +356,20 @@ section h2, .login-section h2 {
     opacity: 0.6;
     cursor: not-allowed;
     transform: none;
+}
+
+.exit-btn {
+    color: red;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    transition: color 0.3s ease;
+}
+
+.exit-btn:hover {
+    color: darkred;
 }
 
 .discrepancy-btn {
@@ -1678,15 +1692,148 @@ section h2, .login-section h2 {
     }
 }
 
-/* Color Selection Screen */
-.color-selection-screen {
+.full-screen {
     margin: 0 auto;
     text-align: center;
-    padding: 20px 20px;
+    padding: 0px 20px;
     max-height: 100vh;
     overflow-y: auto;
 }
 
+/* Deck Notes Editor */
+.deck-notes-editor h3 {
+  margin-top: 0;
+  font-size: 1.7em;
+  color: #2c3e50;
+  margin-bottom: 10px;
+}
+
+.deck-notes-editor p {
+  color: #666;
+  margin-bottom: 22px;
+  font-size: 1.05em;
+}
+
+.deck-notes-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.deck-notes-editor-publish{
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.deck-notes-table {
+  width: 100%;
+  min-width: 71em;
+  margin-bottom: 18px;
+  font-size: 1em;
+  border-radius: 12px;
+  overflow: hidden;
+  overflow-x: auto;
+  table-layout: fixed;
+}
+
+.deck-notes-table th:first-child {
+  border-top-left-radius: 12px;
+}
+
+.deck-notes-table th:last-child {
+  border-top-right-radius: 12px;
+}
+
+.deck-notes-table tr:last-child td:first-child {
+  border-bottom-left-radius: 12px;
+}
+
+.deck-notes-table tr:last-child td:last-child {
+  border-bottom-right-radius: 12px;
+}
+
+.deck-notes-table .deck-cards-list {
+  background: #e8ecf2;
+  color: #2c3e50;
+  font-weight: 500;
+}
+
+.deck-card-link{
+    text-decoration: none;
+    color: inherit;
+}
+
+.card-hover-preview {
+    position: fixed;
+    z-index: 9999;
+    pointer-events: none;
+    max-width: 320px;
+    max-height: 440px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.25);
+    border-radius: 8px;
+    background: #fff;
+}
+
+.deck-notes-table th, .deck-notes-table td {
+  border-bottom: 1px solid #e0e0e0;
+  padding: 10px 14px;
+}
+
+.deck-notes-table th {
+  background: #e8ecf2;
+  color: #2c3e50;
+  font-weight: 700;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: center;
+}
+
+.deck-notes-table td {
+  background: white;
+  text-align: left;
+}
+
+.deck-notes-table [data-col="0"] { /* Decklists */
+  width: 15em;
+}
+
+.deck-notes-table [data-col="1"] { /* Clock */
+  text-align: center;
+  font-weight: bold;
+  width: 6em;
+}
+
+.deck-notes-table [data-col="2"] { /* Notes */
+  min-width: 30em;
+}
+
+.deck-notes-table [data-col="3"] { /* Additional Notes */
+  width: 20em;
+}
+
+.deck-notes-table .editable:hover {
+  background: #e3f2fd;
+  outline: 1px solid #2c3e50;
+}
+
+.deck-notes-table .editable{
+  cursor: text;
+}
+
+.deck-notes-table .editable:focus {
+  outline: 2px solid #2c3e50;
+}
+
+.deck-notes-table .updated {
+  outline: 1px solid #f1575f;
+  background: #f5eaeb;
+}
+
+/* Color Selection Screen */
 .color-selection-screen h3 {
     color: #2c3e50;
     font-size: 1.8rem;

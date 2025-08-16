@@ -1,8 +1,9 @@
 /**
  * Guru Analysis Interface
  * Handles the single-row analysis interface for guru decisions
- */
+*/
 import { ScryfallAPI } from './scryfallAPI.js';
+import { DeckNotesEditor } from './deckNotesEditor.js';
 import { CONFIG } from '../config.js';
 
 export class GuruAnalysisInterface {
@@ -46,7 +47,7 @@ export class GuruAnalysisInterface {
 
         // Find the merged guru sheet
         const mergedGuruSheet = sheetData.sheets?.find(sheet => 
-            sheet.sheetTitle === 'Merged Gurus'
+            sheet.title === 'Merged Gurus'
         );
 
         if (!mergedGuruSheet || !mergedGuruSheet.values || mergedGuruSheet.values.length < 2) {
@@ -250,6 +251,18 @@ export class GuruAnalysisInterface {
 
     async loadData(sheetData, guruColorAlreadyDetermined = false, showMatchTable = false) {
         this.currentData = sheetData;
+
+        if (sheetData.sheets.some(sheet => sheet.title === 'Merged Gurus' && sheet.hidden)) {
+            const notesData = sheetData.sheets.find(sheet => sheet.title === 'Deck Notes');
+            if (notesData) {
+                // Show deck notes editor if available
+                this.showDeckNotesEditor(notesData);
+                return;
+            } else {
+                this.uiController.showError('No Deck Notes sheet found. Please ensure it exists to continue.');
+                return;
+            }
+        }
         
         if (!guruColorAlreadyDetermined) {
             try {
@@ -318,16 +331,16 @@ export class GuruAnalysisInterface {
         
         // Find the "Deck Notes" sheet
         const deckNotesSheet = sheetData.sheets.find(sheet => 
-            sheet.sheetTitle && sheet.sheetTitle.toLowerCase().includes('deck notes')
+            sheet.title && sheet.title.toLowerCase().includes('deck notes')
         );
         
         if (!deckNotesSheet) {
             console.log('No "Deck Notes" sheet found. Available sheets:', 
-                sheetData.sheets.map(s => s.sheetTitle));
+                sheetData.sheets.map(s => s.title));
             return deckNotesMap;
         }
         
-        console.log('Found Deck Notes sheet:', deckNotesSheet.sheetTitle);
+        console.log('Found Deck Notes sheet:', deckNotesSheet.title);
         
         if (!deckNotesSheet.values || deckNotesSheet.values.length < 2) {
             console.log('Deck Notes sheet has no data or insufficient rows');
@@ -391,12 +404,12 @@ export class GuruAnalysisInterface {
         const headerRow = sheet.values[0];
         
         // Handle different sheet types
-        if (sheet.sheetTitle === 'Merged Gurus') {
+        if (sheet.title === 'Merged Gurus') {
             // For merged guru sheet, use the merged column structure
             this.processMergedGuruSheet(sheet, sheetIndex);
         } else {
             // For deck notes or other sheets, skip processing
-            console.log(`Skipping sheet "${sheet.sheetTitle}" - not a guru analysis sheet`);
+            console.log(`Skipping sheet "${sheet.title}" - not a guru analysis sheet`);
             return;
         }
     }
@@ -466,7 +479,7 @@ export class GuruAnalysisInterface {
             if (player1.trim() || player2.trim()) {
                 this.allRows.push({
                     sheetIndex,
-                    sheetTitle: sheet.sheetTitle,
+                    sheetTitle: sheet.title,
                     sheetId: sheet.sheetId,
                     rowIndex,
                     player1: player1.trim(),
@@ -975,7 +988,7 @@ export class GuruAnalysisInterface {
                     expectedValue: '',
                     valueType: 'string',
                     isMergedGuruUpdate: true,
-                    guruSheetIds: this.currentData.sheets.find(s => s.sheetTitle === 'Merged Gurus')?.guruSheetIds
+                    guruSheetIds: this.currentData.sheets.find(s => s.title === 'Merged Gurus')?.guruSheetIds
                 };
             })
         };
@@ -1091,7 +1104,7 @@ export class GuruAnalysisInterface {
                 
                 if (cardData.image) {
                     // Create Scryfall search URL with quoted card name for exact match
-                    const scryfallUrl = `https://scryfall.com/search?q=!${encodeURIComponent('"' + cardData.cardName + '"')}`;
+                    const scryfallUrl = this.scryfallAPI.getCardUrl(cardData.cardName);
                     
                     // Use the loaded Image object directly - wrap in link to Scryfall
                     const link = document.createElement('a');
@@ -1110,7 +1123,7 @@ export class GuruAnalysisInterface {
                     slot.appendChild(link);
                 } else {
                     // Show card name as fallback - also linkable, but with non-exact matching
-                    const scryfallUrl = `https://scryfall.com/search?q=${encodeURIComponent(cardData.cardName)}`;
+                    const scryfallUrl = this.scryfallAPI.getCardUrl(cardData.cardName, false);
                     slot.innerHTML = `<a href="${scryfallUrl}" target="_blank" rel="noopener noreferrer" class="card-link">
                         <div class="card-error">${cardData.cardName}</div>
                     </a>`;
@@ -1143,7 +1156,7 @@ export class GuruAnalysisInterface {
             // Use helper to get analysis column index
             const analysisColIndex = this.getCurrentGuruColIndex('analysis');
             console.log('🎯 Updating cell:', {
-                sheetTitle: currentRow.sheetTitle,
+                sheetTitle: currentRow.title,
                 originalRowIndex: currentRow.originalRowIndex,
                 filteredRowIndex: currentRow.rowIndex,
                 analysisColIndex,
@@ -1160,7 +1173,7 @@ export class GuruAnalysisInterface {
                     value: value.toString(),
                     valueType: 'number', // Explicitly specify this is a number
                     isMergedGuruUpdate: true,
-                    guruSheetIds: this.currentData.sheets.find(s => s.sheetTitle === 'Merged Gurus')?.guruSheetIds
+                    guruSheetIds: this.currentData.sheets.find(s => s.title === 'Merged Gurus')?.guruSheetIds
                 }]
             };
 
@@ -1251,7 +1264,7 @@ export class GuruAnalysisInterface {
             // Use helper to get signature column index
             const signatureColIndex = this.getCurrentGuruColIndex('signature');
             console.log('🎯 Claiming match:', {
-                sheetTitle: currentRow.sheetTitle,
+                sheetTitle: currentRow.title,
                 originalRowIndex: currentRow.originalRowIndex,
                 filteredRowIndex: currentRow.rowIndex,
                 signatureColIndex,
@@ -1269,7 +1282,7 @@ export class GuruAnalysisInterface {
                     expectedValue: '', // Only update if current value is empty
                     valueType: 'string',
                     isMergedGuruUpdate: true,
-                    guruSheetIds: this.currentData.sheets.find(s => s.sheetTitle === 'Merged Gurus')?.guruSheetIds
+                    guruSheetIds: this.currentData.sheets.find(s => s.title === 'Merged Gurus')?.guruSheetIds
                 }]
             };
 
@@ -1359,7 +1372,7 @@ export class GuruAnalysisInterface {
             // Use helper to get signature column index
             const signatureColIndex = this.getCurrentGuruColIndex('signature');
             console.log('🎯 Unclaiming match:', {
-                sheetTitle: currentRow.sheetTitle,
+                sheetTitle: currentRow.title,
                 originalRowIndex: currentRow.originalRowIndex,
                 filteredRowIndex: currentRow.rowIndex,
                 signatureColIndex,
@@ -1376,7 +1389,7 @@ export class GuruAnalysisInterface {
                     value: '',
                     valueType: 'string',
                     isMergedGuruUpdate: true,
-                    guruSheetIds: this.currentData.sheets.find(s => s.sheetTitle === 'Merged Gurus')?.guruSheetIds
+                    guruSheetIds: this.currentData.sheets.find(s => s.title === 'Merged Gurus')?.guruSheetIds
                 }]
             };
 
@@ -1745,10 +1758,30 @@ export class GuruAnalysisInterface {
         `;
     }
 
+    showDeckNotesEditor(notesData) {
+        if (!this.deckNotesEditor) {
+            // Create a new instance if it doesn't exist
+            this.deckNotesEditor = new DeckNotesEditor({
+                analysisInterface: this,
+                uiController: this.uiController,
+                scryfallAPI: this.scryfallAPI,
+                sheetsAPI: this.sheetsAPI,
+                spreadsheetID: this.currentData.sheetId,
+            });
+        } else {
+            // Update references in case they changed
+            this.deckNotesEditor.uiController = this.uiController;
+            this.deckNotesEditor.scryfallAPI = this.scryfallAPI;
+            this.deckNotesEditor.sheetsAPI = this.sheetsAPI;
+            this.deckNotesEditor.spreadsheetID = this.currentData.sheetId;
+        }
+        this.deckNotesEditor.show(notesData);
+    }
+
     calculateColorStatistics(sheetData) {
         // Find the merged guru sheet
         const mergedGuruSheet = sheetData.sheets?.find(sheet => 
-            sheet.sheetTitle === 'Merged Gurus'
+            sheet.title === 'Merged Gurus'
         );
 
         if (!mergedGuruSheet || !mergedGuruSheet.values || mergedGuruSheet.values.length < 2) {
@@ -1806,7 +1839,7 @@ export class GuruAnalysisInterface {
         // Create a new color selection container
         const colorSelectionContainer = document.createElement('div');
         colorSelectionContainer.id = 'color-selection-container';
-        colorSelectionContainer.className = 'color-selection-container';
+        colorSelectionContainer.className = 'color-selection-container full-screen';
         
         const stats = this.calculateColorStatistics(sheetData);
         const sheetTitle = sheetData.title || 'Unknown Sheet';

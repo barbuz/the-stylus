@@ -30,19 +30,8 @@ export class GoogleSheetsAPI {
             );
             
             if (deckNotesSheet) {
-                const response = await gapi.client.sheets.spreadsheets.values.get({
-                    spreadsheetId: sheetId,
-                    range: `'${deckNotesSheet.title}'!A1:D1000`,
-                });
-
-                allSheetsData.push({
-                    sheetTitle: deckNotesSheet.title,
-                    sheetId: deckNotesSheet.sheetId,
-                    values: response.result.values || [],
-                    range: response.result.range,
-                    majorDimension: response.result.majorDimension,
-                    columnMapping: this.getColumnMapping(deckNotesSheet.title)
-                });
+                const deckNotesData = await this.getDeckNotes(sheetId, deckNotesSheet);
+                allSheetsData.push(deckNotesData);
             }
 
             // Process and merge guru sheets
@@ -165,7 +154,7 @@ export class GoogleSheetsAPI {
         const hidden = sortedSheets.some(sheet => sheet.hidden);
 
         return {
-            sheetTitle: 'Merged Gurus',
+            title: 'Merged Gurus',
             sheetId: redGuruSheet.sheetId, // Use Red Gurus sheet ID as primary
             values: mergedValues,
             range: `'${redGuruSheet.title}'!A1:I${mergedValues.length}`,
@@ -211,6 +200,31 @@ export class GoogleSheetsAPI {
                 guruAnalysis: 4,   // Column E
                 guruSignature: 5   // Column F
             };
+        }
+    }
+
+    /**
+     * Fetches the data from the Deck Notes sheet for the given spreadsheet ID.
+     * Returns an object with title, sheetId, values, range, majorDimension, and columnMapping.
+     */
+    async getDeckNotes(spreadsheetId, deckNotesSheet, range = 'A:D') {
+        try {
+            const response = await gapi.client.sheets.spreadsheets.values.get({
+                spreadsheetId: spreadsheetId,
+                range: `'${deckNotesSheet.title}'!${range}`,
+            });
+
+            return {
+                title: deckNotesSheet.title,
+                sheetId: deckNotesSheet.sheetId,
+                values: response.result.values || [],
+                range: response.result.range,
+                majorDimension: response.result.majorDimension,
+                columnMapping: this.getColumnMapping(deckNotesSheet.title)
+            };
+        } catch (error) {
+            console.error('API Error (getDeckNotes):', error);
+            throw new Error(error.message || 'Failed to fetch Deck Notes sheet');
         }
     }
 
@@ -427,8 +441,16 @@ export class GoogleSheetsAPI {
                     userEnteredValue = { numberValue: parseFloat(update.value) };
                 } else if (update.valueType === 'boolean') {
                     userEnteredValue = { boolValue: update.value === 'true' || update.value === true };
-                } else {
+                } else if (update.valueType === 'string') {
                     userEnteredValue = { stringValue: update.value.toString() };
+                } else {
+                    // Fallback to auto-detection if type not specified
+                    const numValue = parseFloat(update.value);
+                    if (!isNaN(numValue) && isFinite(numValue)) {
+                        userEnteredValue = { numberValue: numValue };
+                    } else {
+                        userEnteredValue = { stringValue: update.value.toString() };
+                    }
                 }
                 return {
                     updateCells: {
@@ -529,5 +551,38 @@ export class GoogleSheetsAPI {
             console.error('API Error:', error);
             throw new Error(error.message || 'Failed to perform batch update');
         }
+    }
+
+    /**
+     * Unhides the Red, Blue, and Green Guru sheets in the spreadsheet.
+     * Returns a promise that resolves when the operation is complete.
+    */
+    async unhideGuruSheets(sheetId) {
+        if (!this.authManager.isLoggedIn()) {
+            throw new Error('User not authenticated');
+        }
+        // Get all sheet metadata
+        const metadata = await this.getSheetMetadata(sheetId);
+        // Only match exact Guru sheet names (case-insensitive)
+        const guruSheetNames = ['Red Gurus', 'Blue Gurus', 'Green Gurus'];
+        const guruSheets = metadata.sheets.filter(sheet =>
+            guruSheetNames.some(name => sheet.title.trim().toLowerCase() === name.toLowerCase())
+        );
+        if (guruSheets.length === 0) {
+            throw new Error('No Guru sheets found to unhide');
+        }
+        // Build requests to unhide each sheet
+        const requests = guruSheets.map(sheet => ({
+            updateSheetProperties: {
+                properties: {
+                    sheetId: sheet.sheetId,
+                    hidden: false
+                },
+                fields: 'hidden'
+            }
+        }));
+        // Send batch update
+        const response = await this.batchUpdate(sheetId, requests);
+        return response;
     }
 }

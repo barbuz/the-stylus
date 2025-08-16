@@ -169,7 +169,7 @@ class ThreeCardBlindGuruTool {
 
         loadBtn.addEventListener('click', () => this.loadSheet());
         refreshBtn.addEventListener('click', () => this.refreshSheet());
-        exitAnalysisBtn.addEventListener('click', () => this.exitAnalysis());
+        exitAnalysisBtn.addEventListener('click', () => this.uiController.showSheetInputSection());
         
         // Allow Enter key to trigger load
         sheetUrlInput.addEventListener('keypress', (e) => {
@@ -226,15 +226,12 @@ class ThreeCardBlindGuruTool {
             
             // Load data into the analysis interface instead of the renderer
             await this.analysisInterface.loadData(sheetData);
-            this.uiController.showSheetEditor(sheetData.title || 'Pod');
+            this.uiController.showSheetEditor(sheetData.title || 'Untitled Pod');
             
             // Add to recent pods
             this.recentPodsManager.addRecentPod(sheetId, sheetData.title || 'Untitled Pod', url);
-            
-            // Show success message
-            const totalRows = this.analysisInterface.getTotalRows();
-            this.uiController.showStatus(`Pod loaded successfully - ${totalRows} rows available`, 'success');
-            
+            this.uiController.showStatus(`Loaded pod - ${sheetData.title || 'Untitled Pod'}`, 'success');
+
         } catch (error) {
             console.error('Error loading pod:', error);
             this.uiController.showStatus(`Error loading pod: ${error.message}`, 'error');
@@ -265,17 +262,6 @@ class ThreeCardBlindGuruTool {
             console.error('Error refreshing pod:', error);
             this.uiController.showStatus(`Error refreshing: ${error.message}`, 'error');
         }
-    }
-
-    exitAnalysis() {
-        // Hide the fullscreen analysis and show the regular interface
-        const sheetEditor = document.getElementById('sheet-editor');
-        sheetEditor.style.display = 'none';
-        sheetEditor.classList.remove('fullscreen-analysis');
-        
-        // Show the sheet input section again
-        this.uiController.showSheetInputSection();
-        this.uiController.showStatus('Analysis session ended. Load a sheet to start analysing again.', 'info');
     }
 
     isValidGoogleSheetsUrl(url) {

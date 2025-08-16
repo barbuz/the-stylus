@@ -8,6 +8,27 @@ export class UIController {
         this.saveBtn = document.getElementById('save-btn');
         this.refreshBtn = document.getElementById('refresh-btn');
         this.sheetTitle = document.getElementById('sheet-title');
+
+        // --- Pointer type detection ---
+        this._pointerType = null;
+        this._pointerDetectionDone = false;
+        this._pointerHandler = (e) => {
+            if (!this._pointerDetectionDone) {
+                this._pointerType = e.pointerType;
+                this._pointerDetectionDone = true;
+                console.log(`Pointer type detected: ${this._pointerType}`);
+                window.removeEventListener('pointerdown', this._pointerHandler, true);
+                window.removeEventListener('pointermove', this._pointerHandler, true);
+            }
+        };
+        window.addEventListener('pointerdown', this._pointerHandler, true);
+        window.addEventListener('pointermove', this._pointerHandler, true);
+    }
+    /**
+     * Returns the detected pointer type: 'mouse', 'touch', 'pen', or null if not yet detected.
+     */
+    getPointerType() {
+        return this._pointerType;
     }
 
     showStatus(message, type = 'info') {
@@ -60,6 +81,9 @@ export class UIController {
         // Show the input sections again when exiting fullscreen analysis
         const sheetInputSection = document.getElementById('sheet-input-section');
         const header = document.querySelector('header');
+
+        // Hide the sheet editor
+        this.sheetEditor.style.display = 'none';
         
         // Always show these sections
         if (sheetInputSection) sheetInputSection.style.display = 'block';
