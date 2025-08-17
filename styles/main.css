@@ -622,10 +622,9 @@ section h2, .login-section h2 {
     border-radius: 12px;
     box-shadow: 0 8px 32px rgba(0,0,0,0.25);
     max-width: 90vw;
-    width: 900px;
+    min-width: 70em;
     max-height: 80vh;
     overflow: auto;
-    padding: 32px 24px;
     position: relative;
 }
 .match-table {
@@ -666,7 +665,8 @@ section h2, .login-section h2 {
 @media (max-width: 1000px) {
     .match-table-modal {
         width: 98vw;
-        padding: 10px 2vw;
+        min-width: 98vw;
+        padding: 0px 2vw;
     }
     .match-table th, .match-table td {
         padding: 6px 4px;
