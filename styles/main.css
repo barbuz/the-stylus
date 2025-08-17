@@ -547,7 +547,7 @@ section h2, .login-section h2 {
 .guru-color-dropdown.show {
     opacity: 1;
     visibility: visible;
-    transform: translateY(0);
+    transform: translateY(-100%);
     pointer-events: auto;
 }
 

@@ -213,9 +213,7 @@ export class GuruAnalysisInterface {
             return; // No change needed
         }
 
-        try {
-            this.uiController.showStatus(`Switching to ${newColor} guru...`, 'loading');
-            
+        try {            
             const oldColor = this.currentGuruColor;
             this.currentGuruColor = newColor;
             
@@ -226,7 +224,7 @@ export class GuruAnalysisInterface {
             // Show the current row with the new guru color perspective
             await this.showCurrentRow();
             
-            this.uiController.showStatus(`Switched to ${newColor} guru successfully`, 'success');
+            this.uiController.showStatus(`Switched to ${newColor} guru`, 'success');
             
         } catch (error) {
             console.error('Error changing guru color:', error);
