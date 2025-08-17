@@ -339,28 +339,18 @@ export class GuruAnalysisInterface {
                 sheetData.sheets.map(s => s.title));
             return deckNotesMap;
         }
-        
-        console.log('Found Deck Notes sheet:', deckNotesSheet.title);
-        
+                
         if (!deckNotesSheet.values || deckNotesSheet.values.length < 2) {
             console.log('Deck Notes sheet has no data or insufficient rows');
             return deckNotesMap;
         }
         
         const headerRow = deckNotesSheet.values[0];
-        console.log('Deck Notes headers:', headerRow);
         
         const decklistsColIndex = this.findColumnIndex(headerRow, ['Decklists', 'Decklist']);
         const goldfishClockColIndex = this.findColumnIndex(headerRow, ['Goldfish Clock', 'Clock']);
         const notesColIndex = this.findColumnIndex(headerRow, ['Notes']);
         const additionalNotesColIndex = this.findColumnIndex(headerRow, ['Additional Notes', 'Add Notes']);
-        
-        console.log('Column indices:', {
-            decklists: decklistsColIndex,
-            goldfishClock: goldfishClockColIndex,
-            notes: notesColIndex,
-            additionalNotes: additionalNotesColIndex
-        });
         
         if (decklistsColIndex === -1) {
             console.log('Decklists column not found');
@@ -373,7 +363,7 @@ export class GuruAnalysisInterface {
             const decklist = row[decklistsColIndex];
             
             if (decklist && decklist.trim()) {
-                const deckInfo = {};
+                const deckInfo = {row: i};
                 
                 if (goldfishClockColIndex !== -1 && row[goldfishClockColIndex]) {
                     deckInfo.goldfishClock = row[goldfishClockColIndex].toString().trim();
@@ -1963,35 +1953,22 @@ export class GuruAnalysisInterface {
         
         const infoElements = [];
 
-        // Add goldfish clock if available
-        if (deckInfo.goldfishClock) {
-            infoElements.push(`<span class="deck-clock">Clock: ${deckInfo.goldfishClock}</span>`);
-        }
+        // Add goldfish clock, notes, and additional notes
+        infoElements.push(`<span class="deck-clock">Clock: <span class="notes-value">${deckInfo.goldfishClock || ''}</span> <button class="edit-deck-info-btn" data-type="clock" title="Edit Clock">✎</button></span>`);
+        infoElements.push(`<span class="deck-notes"><span class="notes-value">${deckInfo.notes || ''}</span> <button class="edit-deck-info-btn" data-type="notes" title="Edit Notes">✎</button></span>`);
+        infoElements.push(`<hr class="deck-separator">`);
+        infoElements.push(`<span class="deck-additional"><span class="notes-value">${deckInfo.additionalNotes || ''}</span> <button class="edit-deck-info-btn" data-type="additionalNotes" title="Edit Additional Notes">✎</button></span>`);
 
-        // Add notes if available
-        if (deckInfo.notes) {
-            infoElements.push(`<span class="deck-notes">${deckInfo.notes}</span>`);
-        }
-
-        // Add horizontal line if both notes and additional notes exist
-        if (deckInfo.notes && deckInfo.additionalNotes) {
-            infoElements.push(`<hr class="deck-separator">`);
-        }
-
-        // Add additional notes if available
-        if (deckInfo.additionalNotes) {
-            infoElements.push(`<span class="deck-additional">${deckInfo.additionalNotes}</span>`);
-        }
 
         if (infoElements.length > 0) {
             const deckInfoDiv = document.createElement('div');
             deckInfoDiv.className = 'deck-info';
             deckInfoDiv.innerHTML = infoElements.join(' ');
-            
+
             // On mobile (768px and below), place deck info after the cards
             // On desktop, place it before the cards (current behavior)
             const isMobile = window.innerWidth <= 768;
-            
+
             if (isMobile) {
                 // Append after cards on mobile
                 cardsContainer.appendChild(deckInfoDiv);
@@ -1999,7 +1976,99 @@ export class GuruAnalysisInterface {
                 // Insert before cards on desktop
                 cardsContainer.insertBefore(deckInfoDiv, cardsContainer.firstChild);
             }
-            
+
+
+            // --- Editing logic for deck info fields (auto-save on blur, Enter/Escape behavior) ---
+            const handleEditClick = (e) => {
+                const btn = e.target.closest('.edit-deck-info-btn');
+                if (!btn) return;
+                const type = btn.getAttribute('data-type');
+                const span = btn.closest('span');
+                if (!span) return;
+
+                // Get current value from the parent span of the button
+                const currentValue = span.querySelector('.notes-value').textContent || '';
+
+                // Create input
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.value = currentValue;
+                input.className = 'deck-info-edit-input';
+                input.setAttribute('aria-label', 'Edit deck info');
+                input.style.width = '70%';
+
+                // Replace span content
+                const originalHTML = span.innerHTML;
+                span.innerHTML = '';
+                span.appendChild(input);
+                input.focus();
+
+                let escapePressed = false;
+
+                // Save logic: only if changed
+                const doSaveIfChanged = async () => {
+                    const newValue = input.value;
+                    // Restore original HTML
+                    span.innerHTML = originalHTML;
+                    // Re-attach the edit button listener
+                    span.querySelector('.edit-deck-info-btn').addEventListener('click', handleEditClick);
+                    if (newValue !== currentValue) {
+                        this.uiController.showStatus(`Saving ${type} changes...`, 'loading');
+                        // Find row and column indices in the Deck Notes sheet
+                        const deckInfo = this.deckNotesMap.get(deckString) || {};
+                        const row = deckInfo.row;
+                        const colMap = { clock: 1, notes: 2, additionalNotes: 3 };
+                        const col = colMap[type];
+                        // Find the "Deck Notes" sheet
+                        const deckNotesSheet = this.currentData.sheets.find(sheet => 
+                            sheet.title && sheet.title.toLowerCase().includes('deck notes')
+                        );
+                        // Do a checked update to save the edited cell
+                        const updates = {
+                            updates: [{
+                                sheetId: deckNotesSheet.sheetId,
+                                row: row + 1, // +1 because sheets are 1-indexed
+                                col: col + 1, // +1 because sheets are 1-indexed
+                                value: newValue,
+                                expectedValue: currentValue, // Only update if current value matches old content
+                                valueType: 'auto-detect',
+                            }]
+                        };
+                        const result = await this.sheetsAPI.checkedUpdateSheetData(this.currentData.sheetId, updates);
+                        
+                        if (result && result.skippedCells == 0) {
+                            if (type === 'clock') deckInfo.goldfishClock = newValue;
+                            else if (type === 'notes') deckInfo.notes = newValue;
+                            else if (type === 'additionalNotes') deckInfo.additionalNotes = newValue;
+                            this.deckNotesMap.set(deckString, { ...deckInfo });
+                            const notesValueSpan = span.querySelector('.notes-value');
+                            if (notesValueSpan) {
+                                notesValueSpan.textContent = newValue;
+                            }
+                            this.uiController.showStatus(`${type.charAt(0).toUpperCase() + type.slice(1)} saved successfully!`, 'success');
+                        } else {
+                            this.uiController.showStatus(`Failed to save ${type} changes. The original data may have been modified.`, 'info');
+                            console.warn(`Failed to save ${type} changes:`, result);
+                        }
+                    }
+                };
+
+                input.addEventListener('keydown', (ev) => {
+                    if (ev.key === 'Enter') {
+                        input.blur();
+                    } else if (ev.key === 'Escape') {
+                        input.value = currentValue;
+                        input.blur();
+                    }
+                });
+
+                input.addEventListener('blur', doSaveIfChanged);
+            };
+
+            deckInfoDiv.querySelectorAll('.edit-deck-info-btn').forEach(btn => {
+                btn.addEventListener('click', handleEditClick);
+            });
+
             console.log('Deck info displayed successfully');
         } else {
             console.log('No info elements to display');

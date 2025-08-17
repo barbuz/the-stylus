@@ -455,6 +455,13 @@ section h2, .login-section h2 {
     display: block;
 }
 
+.status-message.info {
+    background-color: #d1ecf1;
+    color: #0c5460;
+    border: 1px solid #bee5eb;
+    display: block;
+}
+
 /* Editor section */
 .editor-header {
     display: flex;
@@ -1246,9 +1253,20 @@ section h2, .login-section h2 {
 
 .deck-separator {
     border: none;
-    border-top: 1px solid #90caf9;
+    border-top: 1px solid #78a9d1;
     margin: 8px 0;
     opacity: 0.6;
+}
+
+.edit-deck-info-btn {
+    background: none;
+    border: none;
+    color: #80b3dd;
+    cursor: pointer;
+}
+
+.edit-deck-info-btn:hover {
+    color: #1a3d5d;
 }
 
 .card-slot {

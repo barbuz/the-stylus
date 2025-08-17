@@ -120,7 +120,6 @@ export class DeckNotesEditor {
                         value: content,
                         expectedValue: oldContent, // Only update if current value matches old content
                         valueType: 'auto-detect',
-                        isDeckNotesUpdate: true
                     }]
                 };
 
