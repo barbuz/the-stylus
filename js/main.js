@@ -221,7 +221,7 @@ class ThreeCardBlindGuruTool {
             
             // Load data into the analysis interface instead of the renderer
             await this.analysisInterface.loadData(sheetData);
-            this.uiController.showSheetEditor(sheetData.title || 'Untitled Pod');
+            this.uiController.showSheetEditor(sheetData.title || 'Untitled Pod', sheetId);
             
             // Add to recent pods
             this.recentPodsManager.addRecentPod(sheetId, sheetData.title || 'Untitled Pod', url);

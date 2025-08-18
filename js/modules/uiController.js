@@ -8,6 +8,7 @@ export class UIController {
         this.saveBtn = document.getElementById('save-btn');
         this.refreshBtn = document.getElementById('refresh-btn');
         this.sheetTitle = document.getElementById('sheet-title');
+        this.sheetLink = document.getElementById('google-sheet-link');
 
         // --- Pointer type detection ---
         this._pointerType = null;
@@ -53,9 +54,12 @@ export class UIController {
         this.statusMessage.className = 'status-message';
     }
 
-    showSheetEditor(title = 'Sheet Editor') {
+    showSheetEditor(title = 'Sheet Editor', sheetId) {
         this.sheetTitle.textContent = title;
-        
+        this.sheetLink.href = `https://docs.google.com/spreadsheets/d/${sheetId}/edit`;
+        this.sheetLink.target = '_blank';
+        this.sheetLink.title = 'Open pod in Google Sheets';
+
         // Hide the other sections for fullscreen experience
         const guruSignatureSection = document.getElementById('guru-signature-section');
         const sheetInputSection = document.getElementById('sheet-input-section');
@@ -165,11 +169,5 @@ export class UIController {
             const result = confirm(message);
             resolve(result);
         });
-    }
-
-    updateSheetTitle(title) {
-        if (this.sheetTitle) {
-            this.sheetTitle.textContent = title;
-        }
     }
 }
