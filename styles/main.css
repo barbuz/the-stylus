@@ -538,17 +538,17 @@ section h2, .login-section h2 {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     z-index: 1000;
     opacity: 0;
-    visibility: hidden;
     transform: translateY(-8px);
     transition: all 0.2s ease;
     pointer-events: none;
+    display: none;
 }
 
 .guru-color-dropdown.show {
     opacity: 1;
-    visibility: visible;
     transform: translateY(-100%);
     pointer-events: auto;
+    display: block;
 }
 
 .guru-color-option {
@@ -720,15 +720,14 @@ section h2, .login-section h2 {
 
 .fullscreen-analysis .match-details {
     flex: 1;
-    display: flex;
-    flex-direction: column;
+    display: block;
     min-height: 100%;
     background: white;
     border-radius: 0;
-    padding: 10px;
     box-shadow: none;
     border: none;
-    overflow: visible;
+    overflow-y: auto;
+    overflow-x: visible;
 }
 
 .fullscreen-analysis .content-sidebar {
@@ -886,30 +885,18 @@ section h2, .login-section h2 {
     flex: 1;
     display: flex;
     flex-direction: column;
-    justify-content: center;
-}
-
-/* Vertical layout for players - each player gets their own row */
-.players-row {
-    display: flex;
-    flex-direction: column;
     gap: 10px;
-    flex: 1;
-    height: 100%;
+    min-height: 100%;
     justify-content: space-evenly;
+    position: relative; /* Needed to position navigation controls*/
 }
 
-.players-row .player-deck {
+.match-details .player-deck {
     flex: 1;
     display: flex;
     flex-direction: column;
     justify-content: center;
     margin-bottom: 0;
-}
-
-/* Overlay navigation controls in match-details */
-.match-details{
-    position: relative;
 }
 
 .navigation-controls {
@@ -1201,22 +1188,18 @@ section h2, .login-section h2 {
     flex-wrap: wrap;
 }
 
-/* New card display styles */
-.player-deck {
-    margin-bottom: 0;
+.deck-container {
     display: flex;
     flex-direction: row;
-    height: 100%;
+    flex-wrap: wrap-reverse;
     gap: 10px;
-    align-items: stretch;
-    overflow: visible;
+    justify-content: center;
 }
 
 .card-images {
     display: flex !important;
     flex-direction: row !important;
-    justify-content: flex-end;
-    gap: 10px;
+    justify-content: center;
     flex-wrap: nowrap;
     align-items: flex-start;
     flex-shrink: 0;
@@ -1298,18 +1281,33 @@ section h2, .login-section h2 {
 
 .card-link:hover {
     transform: scale(1.5);
-    transform-origin: center top;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
     z-index: 10;
     position: relative;
 }
 
+/* Set origins for hover effects to try to keep cards in the decks area */
 #player1-cards .card-link:hover {
     transform-origin: center;
 }
 
+#player1-cards .card-slot:first-child .card-link:hover {
+    transform-origin: left;
+}
+
+#player1-cards .card-slot:last-child .card-link:hover {
+    transform-origin: right;
+}
+
 #player2-cards .card-link:hover {
     transform-origin: center bottom;
+}
+#player2-cards .card-slot:first-child .card-link:hover {
+    transform-origin: left bottom;
+}
+
+#player2-cards .card-slot:last-child .card-link:hover {
+    transform-origin: right bottom;
 }
 
 .card-link:focus {
@@ -1568,17 +1566,7 @@ section h2, .login-section h2 {
         padding: 0;
     }
     
-    .match-details {
-        padding: 10px;
-    }
-    
-    .players-row {
-        gap: 10px;
-        height: auto;
-        justify-content: flex-start;
-    }
-    
-    .players-row .player-deck {
+    .match-details .player-deck {
         flex: none;
         justify-content: flex-start;
     }
@@ -1647,8 +1635,7 @@ section h2, .login-section h2 {
     }
 
     /* Mobile-specific deck info positioning */
-    .card-images .deck-info {
-        order: 2; /* Place deck info after cards */
+    .deck-info {
         min-width: auto;
         width: 100%; /* Full width on mobile */
         margin-top: 10px;
@@ -1659,17 +1646,13 @@ section h2, .login-section h2 {
         line-height: 1.2;
     }
 
-    .card-images .deck-info .deck-clock {
+    .deck-info .deck-clock {
         font-size: 0.9rem;
         margin-bottom: 4px;
     }
 
-    .card-images .deck-info .deck-separator {
+    .deck-info .deck-separator {
         margin: 4px 0;
-    }
-
-    .card-images .card-slot {
-        order: 1; /* Ensure cards come first */
     }
 
     .card-slot {

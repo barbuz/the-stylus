@@ -88,9 +88,10 @@
                 <section class="sheet-editor-section fullscreen-analysis" id="sheet-editor" style="display: none;">
                     <div class="guru-analysis-interface" id="guru-analysis-interface">
                         <div class="match-details">
-                            <div class="players-row">
-                                <div class="player-deck">
-                                    <h3>Player 1 (On the Play)</h3>
+                            <div class="player-deck">
+                                <h3>Player 1 (On the Play)</h3>
+                                <div class="deck-container">
+                                    <div class="deck-info" id="player1-deck-info"></div>
                                     <div class="card-images" id="player1-cards">
                                         <div class="card-slot">
                                             <div class="card-loading">Loading...</div>
@@ -103,14 +104,17 @@
                                         </div>
                                     </div>
                                 </div>
-                                
-                                <div class="navigation-controls">
-                                    <button id="prev-btn" class="nav-arrow-btn" disabled title="Previous match">‹</button>
-                                    <button id="next-btn" class="nav-arrow-btn" disabled title="Next match">›</button>
-                                </div>
-                                
-                                <div class="player-deck">
-                                    <h3>Player 2 (On the Draw)</h3>
+                            </div>
+                            
+                            <div class="navigation-controls">
+                                <button id="prev-btn" class="nav-arrow-btn" disabled title="Previous match">‹</button>
+                                <button id="next-btn" class="nav-arrow-btn" disabled title="Next match">›</button>
+                            </div>
+                            
+                            <div class="player-deck">
+                                <h3>Player 2 (On the Draw)</h3>
+                                <div class="deck-container">
+                                    <div class="deck-info" id="player2-deck-info"></div>
                                     <div class="card-images" id="player2-cards">
                                         <div class="card-slot">
                                             <div class="card-loading">Loading...</div>

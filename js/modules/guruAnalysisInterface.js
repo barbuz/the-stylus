@@ -1921,19 +1921,6 @@ export class GuruAnalysisInterface {
 
     displayDeckInfo(playerId, deckString) {
         console.log('displayDeckInfo called with:', playerId, deckString);
-        
-        const cardsContainer = document.getElementById(`${playerId}-cards`);
-        if (!cardsContainer) {
-            console.log('Cards container not found:', `${playerId}-cards`);
-            return;
-        }
-        
-        const existingInfo = cardsContainer.querySelector('.deck-info');
-        
-        // Remove existing deck info if present
-        if (existingInfo) {
-            existingInfo.remove();
-        }
 
         // Check if we have deck notes for this deck
         if (!this.deckNotesMap) {
@@ -1958,119 +1945,101 @@ export class GuruAnalysisInterface {
         infoElements.push(`<span class="deck-additional"><span class="notes-value">${deckInfo.additionalNotes || ''}</span> <button class="edit-deck-info-btn" data-type="additionalNotes" title="Edit Additional Notes">✎</button></span>`);
 
 
-        if (infoElements.length > 0) {
-            const deckInfoDiv = document.createElement('div');
-            deckInfoDiv.className = 'deck-info';
-            deckInfoDiv.innerHTML = infoElements.join(' ');
+        const deckInfoDiv = document.getElementById(`${playerId}-deck-info`);
+        deckInfoDiv.innerHTML = infoElements.join(' ');
 
-            // On mobile (768px and below), place deck info after the cards
-            // On desktop, place it before the cards (current behavior)
-            const isMobile = window.innerWidth <= 768;
+        // --- Editing logic for deck info fields (auto-save on blur, Enter/Escape behavior) ---
+        const handleEditClick = (e) => {
+            const btn = e.target.closest('.edit-deck-info-btn');
+            if (!btn) return;
+            const type = btn.getAttribute('data-type');
+            const span = btn.closest('span');
+            if (!span) return;
 
-            if (isMobile) {
-                // Append after cards on mobile
-                cardsContainer.appendChild(deckInfoDiv);
-            } else {
-                // Insert before cards on desktop
-                cardsContainer.insertBefore(deckInfoDiv, cardsContainer.firstChild);
-            }
+            // Get current value from the parent span of the button
+            const currentValue = span.querySelector('.notes-value').textContent || '';
 
+            // Create input
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = currentValue;
+            input.className = 'deck-info-edit-input';
+            input.setAttribute('aria-label', 'Edit deck info');
+            input.style.width = '70%';
 
-            // --- Editing logic for deck info fields (auto-save on blur, Enter/Escape behavior) ---
-            const handleEditClick = (e) => {
-                const btn = e.target.closest('.edit-deck-info-btn');
-                if (!btn) return;
-                const type = btn.getAttribute('data-type');
-                const span = btn.closest('span');
-                if (!span) return;
+            // Replace span content
+            const originalHTML = span.innerHTML;
+            span.innerHTML = '';
+            span.appendChild(input);
+            input.focus();
 
-                // Get current value from the parent span of the button
-                const currentValue = span.querySelector('.notes-value').textContent || '';
+            let escapePressed = false;
 
-                // Create input
-                const input = document.createElement('input');
-                input.type = 'text';
-                input.value = currentValue;
-                input.className = 'deck-info-edit-input';
-                input.setAttribute('aria-label', 'Edit deck info');
-                input.style.width = '70%';
-
-                // Replace span content
-                const originalHTML = span.innerHTML;
-                span.innerHTML = '';
-                span.appendChild(input);
-                input.focus();
-
-                let escapePressed = false;
-
-                // Save logic: only if changed
-                const doSaveIfChanged = async () => {
-                    const newValue = input.value;
-                    // Restore original HTML
-                    span.innerHTML = originalHTML;
-                    // Re-attach the edit button listener
-                    span.querySelector('.edit-deck-info-btn').addEventListener('click', handleEditClick);
-                    if (newValue !== currentValue) {
-                        this.uiController.showStatus(`Saving ${type} changes...`, 'loading');
-                        // Find row and column indices in the Deck Notes sheet
-                        const deckInfo = this.deckNotesMap.get(deckString) || {};
-                        const row = deckInfo.row;
-                        const colMap = { clock: 1, notes: 2, additionalNotes: 3 };
-                        const col = colMap[type];
-                        // Find the "Deck Notes" sheet
-                        const deckNotesSheet = this.currentData.sheets.find(sheet => 
-                            sheet.title && sheet.title.toLowerCase().includes('deck notes')
-                        );
-                        // Do a checked update to save the edited cell
-                        const updates = {
-                            updates: [{
-                                sheetId: deckNotesSheet.sheetId,
-                                row: row + 1, // +1 because sheets are 1-indexed
-                                col: col + 1, // +1 because sheets are 1-indexed
-                                value: newValue,
-                                expectedValue: currentValue, // Only update if current value matches old content
-                                valueType: 'auto-detect',
-                            }]
-                        };
-                        const result = await this.sheetsAPI.checkedUpdateSheetData(this.currentData.sheetId, updates);
-                        
-                        if (result && result.skippedCells == 0) {
-                            if (type === 'clock') deckInfo.goldfishClock = newValue;
-                            else if (type === 'notes') deckInfo.notes = newValue;
-                            else if (type === 'additionalNotes') deckInfo.additionalNotes = newValue;
-                            this.deckNotesMap.set(deckString, { ...deckInfo });
-                            const notesValueSpan = span.querySelector('.notes-value');
-                            if (notesValueSpan) {
-                                notesValueSpan.textContent = newValue;
-                            }
-                            this.uiController.showStatus(`${type.charAt(0).toUpperCase() + type.slice(1)} saved successfully!`, 'success');
-                        } else {
-                            this.uiController.showStatus(`Failed to save ${type} changes. The original data may have been modified.`, 'info');
-                            console.warn(`Failed to save ${type} changes:`, result);
+            // Save logic: only if changed
+            const doSaveIfChanged = async () => {
+                const newValue = input.value;
+                // Restore original HTML
+                span.innerHTML = originalHTML;
+                // Re-attach the edit button listener
+                span.querySelector('.edit-deck-info-btn').addEventListener('click', handleEditClick);
+                if (newValue !== currentValue) {
+                    this.uiController.showStatus(`Saving ${type} changes...`, 'loading');
+                    // Find row and column indices in the Deck Notes sheet
+                    const deckInfo = this.deckNotesMap.get(deckString) || {};
+                    const row = deckInfo.row;
+                    const colMap = { clock: 1, notes: 2, additionalNotes: 3 };
+                    const col = colMap[type];
+                    // Find the "Deck Notes" sheet
+                    const deckNotesSheet = this.currentData.sheets.find(sheet => 
+                        sheet.title && sheet.title.toLowerCase().includes('deck notes')
+                    );
+                    // Do a checked update to save the edited cell
+                    const updates = {
+                        updates: [{
+                            sheetId: deckNotesSheet.sheetId,
+                            row: row + 1, // +1 because sheets are 1-indexed
+                            col: col + 1, // +1 because sheets are 1-indexed
+                            value: newValue,
+                            expectedValue: currentValue, // Only update if current value matches old content
+                            valueType: 'auto-detect',
+                        }]
+                    };
+                    const result = await this.sheetsAPI.checkedUpdateSheetData(this.currentData.sheetId, updates);
+                    
+                    if (result && result.skippedCells == 0) {
+                        if (type === 'clock') deckInfo.goldfishClock = newValue;
+                        else if (type === 'notes') deckInfo.notes = newValue;
+                        else if (type === 'additionalNotes') deckInfo.additionalNotes = newValue;
+                        this.deckNotesMap.set(deckString, { ...deckInfo });
+                        const notesValueSpan = span.querySelector('.notes-value');
+                        if (notesValueSpan) {
+                            notesValueSpan.textContent = newValue;
                         }
+                        this.uiController.showStatus(`${type.charAt(0).toUpperCase() + type.slice(1)} saved successfully!`, 'success');
+                    } else {
+                        this.uiController.showStatus(`Failed to save ${type} changes. The original data may have been modified.`, 'info');
+                        console.warn(`Failed to save ${type} changes:`, result);
                     }
-                };
-
-                input.addEventListener('keydown', (ev) => {
-                    if (ev.key === 'Enter') {
-                        input.blur();
-                    } else if (ev.key === 'Escape') {
-                        input.value = currentValue;
-                        input.blur();
-                    }
-                });
-
-                input.addEventListener('blur', doSaveIfChanged);
+                }
             };
 
-            deckInfoDiv.querySelectorAll('.edit-deck-info-btn').forEach(btn => {
-                btn.addEventListener('click', handleEditClick);
+            input.addEventListener('keydown', (ev) => {
+                if (ev.key === 'Enter') {
+                    input.blur();
+                } else if (ev.key === 'Escape') {
+                    input.value = currentValue;
+                    input.blur();
+                }
             });
 
-            console.log('Deck info displayed successfully');
-        } else {
-            console.log('No info elements to display');
-        }
+            input.addEventListener('blur', doSaveIfChanged);
+        };
+
+        deckInfoDiv.querySelectorAll('.edit-deck-info-btn').forEach(btn => {
+            btn.addEventListener('click', handleEditClick);
+        });
+
+        console.log('Deck info displayed successfully');
     }
 
     // --- MATCH TABLE MODAL ---
