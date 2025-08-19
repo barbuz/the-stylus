@@ -1,6 +1,5 @@
 import { CONFIG } from '../config.js';
 import { getElement } from '../utils/domUtils.js';
-import { TIME_CONSTANTS } from '../utils/constants.js';
 
 export class RecentPodsManager {
     constructor() {
@@ -25,31 +24,6 @@ export class RecentPodsManager {
     }
 
     /**
-     * Filter pods to only include those from the current calendar month
-     * @param {Array} pods - Array of pod objects
-     * @returns {Array} Filtered array of pods from current month
-     */
-    filterCurrentMonth(pods) {
-        if (!Array.isArray(pods)) {
-            return [];
-        }
-
-        const now = new Date();
-        const currentYear = now.getFullYear();
-        const currentMonth = now.getMonth();
-
-        return pods.filter(pod => {
-            if (!pod.dateAdded) {
-                return false; // Exclude pods without dateAdded
-            }
-
-            const podDate = new Date(pod.dateAdded);
-            return podDate.getFullYear() === currentYear && 
-                   podDate.getMonth() === currentMonth;
-        });
-    }
-
-    /**
      * Load recent pods from localStorage or Google Drive
      */
     async loadRecentPods() {
@@ -67,9 +41,6 @@ export class RecentPodsManager {
                 console.log('📥 Loaded recent pods from localStorage:', pods.length, 'pods');
             }
             
-            // Filter out pods not from current calendar month
-            pods = this.filterCurrentMonth(pods);
-            
             // Sort by dateAdded (newest first)
             pods.sort((a, b) => b.dateAdded - a.dateAdded);
             
@@ -86,10 +57,7 @@ export class RecentPodsManager {
      * Save recent pods to localStorage or Google Drive
      */
     async saveRecentPods() {
-        try {
-            // Filter out pods not from current calendar month before saving
-            this.recentPods = this.filterCurrentMonth(this.recentPods);
-            
+        try { 
             // Sort by dateAdded (newest first)
             this.recentPods.sort((a, b) => b.dateAdded - a.dateAdded);
             
@@ -201,8 +169,7 @@ export class RecentPodsManager {
             return;
         }
 
-        // Filter and sort pods before rendering
-        this.recentPods = this.filterCurrentMonth(this.recentPods);
+        // Sort pods before rendering
         this.recentPods.sort((a, b) => b.dateAdded - a.dateAdded);
 
         // Show/hide section based on whether we have recent pods
