@@ -183,6 +183,38 @@ export class GoogleSheetsAPI {
         };
     }
 
+    /**
+     * Resolve the target sheetId and column index for an update that may be against
+     * the merged gurus sheet. The update.col is expected to be 1-indexed for the
+     * merged sheet layout. Returns { targetSheetId, targetCol } where targetCol is
+     * a 1-indexed column number appropriate for the target sheet.
+     */
+    resolveTargetForMergedUpdate(update) {
+        let targetSheetId = update.sheetId;
+        let targetCol = update.col;
+
+        if (update.isMergedGuruUpdate) {
+            const columnMapping = this.getMergedGuruColumnMapping();
+
+            if (update.col === columnMapping.redAnalysis + 1 || update.col === columnMapping.redSignature + 1) {
+                targetSheetId = update.guruSheetIds.red;
+                targetCol = update.col === columnMapping.redAnalysis + 1 ? 5 : 6; // E or F
+            } else if (update.col === columnMapping.blueAnalysis + 1 || update.col === columnMapping.blueSignature + 1) {
+                targetSheetId = update.guruSheetIds.blue;
+                targetCol = update.col === columnMapping.blueAnalysis + 1 ? 5 : 6; // E or F
+            } else if (update.col === columnMapping.greenAnalysis + 1 || update.col === columnMapping.greenSignature + 1) {
+                targetSheetId = update.guruSheetIds.green;
+                targetCol = update.col === columnMapping.greenAnalysis + 1 ? 5 : 6; // E or F
+            } else if (update.col <= 3) {
+                // Base columns (A:C) go to Red Gurus sheet
+                targetSheetId = update.guruSheetIds.red;
+                targetCol = update.col;
+            }
+        }
+
+        return { targetSheetId, targetCol };
+    }
+
     getColumnMapping(sheetTitle) {
         if (sheetTitle.toLowerCase().includes('deck notes')) {
             return {
@@ -250,25 +282,10 @@ export class GoogleSheetsAPI {
                 let targetSheetId = update.sheetId;
                 let targetCol = update.col;
 
-                // If this is an update to the merged guru sheet, determine the target sheet and column
-                if (update.isMergedGuruUpdate) {
-                    const columnMapping = this.getMergedGuruColumnMapping();
-                    
-                    if (update.col === columnMapping.redAnalysis + 1 || update.col === columnMapping.redSignature + 1) {
-                        targetSheetId = update.guruSheetIds.red;
-                        targetCol = update.col === columnMapping.redAnalysis + 1 ? 5 : 6; // E or F
-                    } else if (update.col === columnMapping.blueAnalysis + 1 || update.col === columnMapping.blueSignature + 1) {
-                        targetSheetId = update.guruSheetIds.blue;
-                        targetCol = update.col === columnMapping.blueAnalysis + 1 ? 5 : 6; // E or F
-                    } else if (update.col === columnMapping.greenAnalysis + 1 || update.col === columnMapping.greenSignature + 1) {
-                        targetSheetId = update.guruSheetIds.green;
-                        targetCol = update.col === columnMapping.greenAnalysis + 1 ? 5 : 6; // E or F
-                    } else if (update.col <= 3) {
-                        // Base columns (A:C) go to Red Gurus sheet
-                        targetSheetId = update.guruSheetIds.red;
-                        targetCol = update.col;
-                    }
-                }
+                // Resolve target sheet/column for merged guru updates
+                const resolved = this.resolveTargetForMergedUpdate(update);
+                targetSheetId = resolved.targetSheetId;
+                targetCol = resolved.targetCol;
 
                 // Use the explicitly specified value type
                 let userEnteredValue;
@@ -361,24 +378,10 @@ export class GoogleSheetsAPI {
                 let targetCol = update.col;
                 let targetRow = update.row;
 
-                // Handle merged guru sheet updates by routing to appropriate individual sheet
-                if (update.isMergedGuruUpdate) {
-                    const columnMapping = this.getMergedGuruColumnMapping();
-                    
-                    if (update.col === columnMapping.redAnalysis + 1 || update.col === columnMapping.redSignature + 1) {
-                        targetSheetId = update.guruSheetIds.red;
-                        targetCol = update.col === columnMapping.redAnalysis + 1 ? 5 : 6; // E or F
-                    } else if (update.col === columnMapping.blueAnalysis + 1 || update.col === columnMapping.blueSignature + 1) {
-                        targetSheetId = update.guruSheetIds.blue;
-                        targetCol = update.col === columnMapping.blueAnalysis + 1 ? 5 : 6; // E or F
-                    } else if (update.col === columnMapping.greenAnalysis + 1 || update.col === columnMapping.greenSignature + 1) {
-                        targetSheetId = update.guruSheetIds.green;
-                        targetCol = update.col === columnMapping.greenAnalysis + 1 ? 5 : 6; // E or F
-                    } else if (update.col <= 3) {
-                        // Base columns (A:C) go to Red Gurus sheet
-                        targetSheetId = update.guruSheetIds.red;
-                    }
-                }
+                // Resolve merged target mapping for consistency
+                const resolved = this.resolveTargetForMergedUpdate(update);
+                targetSheetId = resolved.targetSheetId;
+                targetCol = resolved.targetCol;
 
                 valuesToCheck.push({
                     originalUpdate: update,
@@ -584,5 +587,68 @@ export class GoogleSheetsAPI {
         // Send batch update
         const response = await this.batchUpdate(sheetId, requests);
         return response;
+    }
+
+    /**
+     * Clear a single cell's value using the Sheets API `spreadsheets.values.clear` endpoint.
+     * spreadsheetId - the ID of the spreadsheet
+     * targetSheetId - the numeric sheetId (not title) to identify which sheet to clear
+     * row, col - 1-indexed coordinates of the cell to clear
+     */
+    /**
+     * Clear a single cell's value.
+     * Usage:
+     *  - clearCell(spreadsheetId, updateObject) where updateObject is the same
+     *    shape used in updateSheetData (must include isMergedGuruUpdate, col, row, sheetId, guruSheetIds)
+     */
+    /**
+     * Clear a single cell's value using an update-like object.
+     * clearCell(spreadsheetId, updateObject)
+     * updateObject must include: row, col or isMergedGuruUpdate+col+guruSheetIds, sheetId
+     */
+    async clearCell(spreadsheetId, update) {
+        try {
+            if (!this.authManager.isLoggedIn()) {
+                throw new Error('User not authenticated');
+            }
+
+            if (!update || typeof update !== 'object') {
+                throw new Error('clearCell requires an update object');
+            }
+
+            if (!update.row) {
+                throw new Error('Update object must include row');
+            }
+
+            // Use helper to resolve merged updates; otherwise, use provided sheetId and col
+            const resolved = this.resolveTargetForMergedUpdate(update);
+            const targetSheetId = resolved.targetSheetId;
+            const col = resolved.targetCol;
+            const row = update.row;
+
+            const metadata = await this.getSheetMetadata(spreadsheetId);
+            const targetSheet = metadata.sheets.find(s => s.sheetId === targetSheetId);
+            if (!targetSheet) {
+                throw new Error(`Target sheet with ID ${targetSheetId} not found`);
+            }
+
+            const columnLetter = String.fromCharCode(65 + col - 1);
+            const range = `'${targetSheet.title}'!${columnLetter}${row}`;
+
+            const response = await gapi.client.sheets.spreadsheets.values.clear({
+                spreadsheetId,
+                range,
+                resource: {}
+            });
+
+            return {
+                success: true,
+                range,
+                response: response.result
+            };
+        } catch (error) {
+            console.error('API Error (clearCell):', error);
+            throw new Error(error.message || 'Failed to clear cell');
+        }
     }
 }

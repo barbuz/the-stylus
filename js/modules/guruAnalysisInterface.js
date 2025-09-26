@@ -882,32 +882,50 @@ export class GuruAnalysisInterface {
             // Check if user has scored this match yet
             const currentAnalysis = this.getCurrentGuruAnalysis(currentRow);
             const hasUserScored = currentAnalysis && currentAnalysis.trim() !== '';
-            
-            // Show/hide unclaim button based on whether user has scored
-            const unclaimButton = document.getElementById('unclaim-button');
+
+            // Manage unclaim / clear buttons
+            let unclaimButton = document.getElementById('unclaim-button');
+            let clearButton = document.getElementById('clear-result-button');
+
             if (!hasUserScored) {
-                // User has claimed but not scored - show unclaim button
+                // User has claimed but not scored - show unclaim button and ensure clear button is hidden
                 if (unclaimButton) {
                     unclaimButton.style.display = 'block';
-                    // Reset unclaim button in case it is in "Unclaiming..." state
                     unclaimButton.disabled = false;
                     unclaimButton.textContent = 'Unclaim Match';
                 } else {
-                    // Create unclaim button if it doesn't exist
-                    const newUnclaimButton = document.createElement('button');
-                    newUnclaimButton.id = 'unclaim-button';
-                    newUnclaimButton.className = 'unclaim-btn secondary-btn';
-                    newUnclaimButton.textContent = 'Unclaim Match';
-                    newUnclaimButton.addEventListener('click', () => this.unclaimRow());
-                    // Insert after the skip button
+                    unclaimButton = document.createElement('button');
+                    unclaimButton.id = 'unclaim-button';
+                    unclaimButton.className = 'unclaim-btn secondary-btn';
+                    unclaimButton.textContent = 'Unclaim Match';
+                    unclaimButton.addEventListener('click', () => this.unclaimRow());
                     const skipButton = document.getElementById('skip-btn');
                     if (skipButton) {
-                        skipButton.insertAdjacentElement('afterend', newUnclaimButton);
+                        skipButton.insertAdjacentElement('afterend', unclaimButton);
                     }
                 }
+
+                // Hide clear button when not scored
+                if (clearButton) clearButton.style.display = 'none';
             } else {
-                // User has scored - hide unclaim button
+                // User has scored - hide unclaim button and show clear button
                 if (unclaimButton) unclaimButton.style.display = 'none';
+
+                if (clearButton) {
+                    clearButton.style.display = 'block';
+                    clearButton.disabled = false;
+                    clearButton.textContent = 'Clear My Result';
+                } else {
+                    clearButton = document.createElement('button');
+                    clearButton.id = 'clear-result-button';
+                    clearButton.className = 'clear-btn secondary-btn';
+                    clearButton.textContent = 'Clear My Result';
+                    clearButton.addEventListener('click', () => this.clearCurrentUserAnalysis());
+                    const skipButton = document.getElementById('skip-btn');
+                    if (skipButton) {
+                        skipButton.insertAdjacentElement('afterend', clearButton);
+                    }
+                }
             }
             
             // Highlight the appropriate button based on current guru analysis value
@@ -1368,20 +1386,16 @@ export class GuruAnalysisInterface {
                 userSignature: userGuruSignature
             });
 
-            // Clear the signature by setting it to empty string
-            const updates = {
-                updates: [{
-                    sheetId: currentRow.sheetId,
-                    row: currentRow.originalRowIndex + 1, // +1 because sheets are 1-indexed
-                    col: signatureColIndex + 1, // +1 because sheets are 1-indexed
-                    value: '',
-                    valueType: 'string',
-                    isMergedGuruUpdate: true,
-                    guruSheetIds: this.currentData.sheets.find(s => s.title === 'Merged Gurus')?.guruSheetIds
-                }]
+            // Clear the signature using clearCell helper
+            const updateObj = {
+                sheetId: currentRow.sheetId,
+                row: currentRow.originalRowIndex + 1, // +1 because sheets are 1-indexed
+                col: signatureColIndex + 1, // +1 because sheets are 1-indexed
+                isMergedGuruUpdate: true,
+                guruSheetIds: this.currentData.sheets.find(s => s.title === 'Merged Gurus')?.guruSheetIds
             };
 
-            await this.sheetsAPI.updateSheetData(this.currentData.sheetId, updates);
+            await this.sheetsAPI.clearCell(this.currentData.sheetId, updateObj);
             
             // Update local data to clear the signature
             switch (this.currentGuruColor) {
@@ -1411,6 +1425,88 @@ export class GuruAnalysisInterface {
             }
             
             this.uiController.showStatus(`Error unclaiming match: ${error.message}`, 'error');
+        }
+    }
+
+    /**
+     * Clear the current user's analysis for the current row (when they've already scored)
+     */
+    async clearCurrentUserAnalysis() {
+        if (this.currentRowIndex >= this.allRows.length) return;
+
+        const currentRow = this.allRows[this.currentRowIndex];
+
+        // Get user's guru signature to verify ownership
+        const userGuruSignature = this.authManager.guruSignature;
+
+        // Verify that the current user owns this match
+        const currentRowSignature = this.getCurrentRowSignature(currentRow);
+        if (currentRowSignature !== userGuruSignature) {
+            this.uiController.showStatus('You can only clear results for matches you own.', 'error');
+            return;
+        }
+
+        // Check if user actually has an analysis to clear
+        const currentAnalysis = this.getCurrentGuruAnalysis(currentRow);
+        if (!currentAnalysis || currentAnalysis.trim() === '') {
+            this.uiController.showStatus('No analysis to clear for this match.', 'info');
+            return;
+        }
+
+        // Disable the clear button and show spinner
+        const clearButton = document.getElementById('clear-result-button');
+        const originalText = clearButton ? clearButton.textContent : 'Clear My Result';
+        if (clearButton) {
+            clearButton.disabled = true;
+            clearButton.innerHTML = '<span class="spinner"></span> Clearing...';
+        }
+
+        try {
+            this.uiController.showStatus('Clearing your analysis...', 'loading');
+
+            // Use helper to get analysis column index
+            const analysisColIndex = this.getCurrentGuruColIndex('analysis');
+
+            const updateObj = {
+                sheetId: currentRow.sheetId,
+                row: currentRow.originalRowIndex + 1,
+                col: analysisColIndex + 1,
+                // value not needed for clearCell; we signal intent via row/col
+                isMergedGuruUpdate: true,
+                guruSheetIds: this.currentData.sheets.find(s => s.title === 'Merged Gurus')?.guruSheetIds
+            };
+
+            await this.sheetsAPI.clearCell(this.currentData.sheetId, updateObj);
+
+            // Update local data to clear the analysis for the current guru
+            switch (this.currentGuruColor) {
+                case 'red': currentRow.redAnalysis = ''; break;
+                case 'blue': currentRow.blueAnalysis = ''; break;
+                case 'green': currentRow.greenAnalysis = ''; break;
+            }
+
+            // Recalculate outcome
+            currentRow.outcomeValue = this.calculateOutcomeFromAnalyses(
+                currentRow.redAnalysis,
+                currentRow.blueAnalysis,
+                currentRow.greenAnalysis
+            );
+
+            this.uiController.showStatus('Your analysis was cleared.', 'success');
+
+            // Hide clear button after clearing
+            if (clearButton) clearButton.style.display = 'none';
+
+            // Update UI for current row
+            await this.showCurrentRow();
+
+        } catch (error) {
+            console.error('Error clearing analysis:', error);
+            if (clearButton) {
+                clearButton.disabled = false;
+                clearButton.textContent = originalText;
+            }
+            this.uiController.showStatus(`Error clearing analysis: ${error.message}`, 'error');
         }
     }
 
