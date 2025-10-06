@@ -15,7 +15,7 @@ export const CONFIG = {
     ].join(' '),
     
     // Application settings
-    APP_NAME: '3cb Visual Guru',
+    APP_NAME: 'The Stylus',
     
     // Local storage keys
     STORAGE_KEYS: {

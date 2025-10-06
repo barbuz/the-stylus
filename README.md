@@ -1,4 +1,4 @@
-# 3cb Visual Guru
+# The Stylus
 
 A browser-based tool for gurus to edit result sheets for 3 Card Blind MTG matches from [3cardblind.com](www.3cardblind.com). This application runs entirely in your browser without requiring a server.
 
@@ -57,12 +57,11 @@ This is an open-source project. Contributions are welcome!
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/yourusername/3cb-visual-guru.git
-   cd 3cb-visual-guru
+   git clone https://github.com/barbuz/the-stylus.git
+   cd the-stylus
    ```
 
 2. **Set up local server:**
    ```bash
-   cd public
    python -m http.server 8000
    ```

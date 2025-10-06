@@ -6,7 +6,8 @@ import { CONFIG } from '../config.js';
 
 export class UserPreferences {
     constructor() {
-        this.preferencesFileName = '3cb-visual-guru-preferences.json';
+        this.preferencesFileName = 'the-stylus-preferences.json';
+        this.oldPreferencesFileName = '3cb-visual-guru-preferences.json'; // For migration
         this.preferencesFileId = null;
         this.isInitialized = false;
         this.cache = null;
@@ -39,10 +40,11 @@ export class UserPreferences {
 
     /**
      * Find existing preferences file or create new one
+     * Includes migration from old filename
      */
     async findOrCreatePreferencesFile() {
         try {
-            // Search for existing preferences file in appdata folder
+            // First, search for new filename
             const response = await gapi.client.drive.files.list({
                 q: `name='${this.preferencesFileName}' and parents in 'appDataFolder' and trashed=false`,
                 spaces: 'appDataFolder'
@@ -51,10 +53,32 @@ export class UserPreferences {
             if (response.result.files && response.result.files.length > 0) {
                 this.preferencesFileId = response.result.files[0].id;
                 console.log('📄 Found existing preferences file:', this.preferencesFileId);
-            } else {
-                // Create new preferences file
-                await this.createPreferencesFile();
+                return;
             }
+
+            // If not found, check for old filename and migrate
+            console.log('🔍 Checking for old preferences file to migrate...');
+            const oldResponse = await gapi.client.drive.files.list({
+                q: `name='${this.oldPreferencesFileName}' and parents in 'appDataFolder' and trashed=false`,
+                spaces: 'appDataFolder'
+            });
+
+            if (oldResponse.result.files && oldResponse.result.files.length > 0) {
+                const oldFileId = oldResponse.result.files[0].id;
+                console.log('📦 Found old preferences file, migrating data...');
+                
+                // Load data from old file
+                const oldData = await this.loadPreferencesFromFile(oldFileId);
+                
+                // Create new file with the old data
+                await this.createPreferencesFile(oldData);
+                
+                console.log('✅ Successfully migrated preferences from old file');
+                return;
+            }
+
+            // No old or new file found, create new one
+            await this.createPreferencesFile();
         } catch (error) {
             console.error('Error finding/creating preferences file:', error);
             throw error;
@@ -63,15 +87,21 @@ export class UserPreferences {
 
     /**
      * Create new preferences file in Google appData
+     * @param {Object} initialData - Optional initial data (for migration)
      */
-    async createPreferencesFile() {
+    async createPreferencesFile(initialData = null) {
         try {
-            const defaultPreferences = {
+            const defaultPreferences = initialData || {
                 guruSignature: '',
                 recentPods: [],
                 version: '1.0.0',
                 lastUpdated: new Date().toISOString()
             };
+
+            // Ensure we have the required structure even if migrating
+            if (initialData) {
+                defaultPreferences.lastUpdated = new Date().toISOString();
+            }
 
             const fileMetadata = {
                 name: this.preferencesFileName,
@@ -119,23 +149,19 @@ export class UserPreferences {
     }
 
     /**
-     * Load preferences from Google appData
+     * Load preferences from a specific file ID
+     * @param {string} fileId - The file ID to load from
      */
-    async loadPreferences() {
-        if (!this.preferencesFileId) {
-            throw new Error('No preferences file ID available');
-        }
-
+    async loadPreferencesFromFile(fileId) {
         try {
             const response = await gapi.client.drive.files.get({
-                fileId: this.preferencesFileId,
+                fileId: fileId,
                 alt: 'media'
             });
 
             const preferences = JSON.parse(response.body);
-            this.cache = preferences;
             
-            console.log('📥 Loaded preferences from appData:', {
+            console.log('📥 Loaded preferences from file:', {
                 guruSignature: preferences.guruSignature,
                 recentPodsCount: preferences.recentPods?.length || 0,
                 lastUpdated: preferences.lastUpdated
@@ -143,9 +169,20 @@ export class UserPreferences {
             
             return preferences;
         } catch (error) {
-            console.error('Error loading preferences from appData:', error);
+            console.error('Error loading preferences from file:', error);
             throw error;
         }
+    }
+
+    /**
+     * Load preferences from Google appData
+     */
+    async loadPreferences() {
+        if (!this.preferencesFileId) {
+            throw new Error('No preferences file ID available');
+        }
+
+        return await this.loadPreferencesFromFile(this.preferencesFileId);
     }
 
     /**

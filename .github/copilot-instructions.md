@@ -1,4 +1,4 @@
-# 3CB Visual Guru
+# The Stylus
 Browser-based tool for gurus to edit result sheets for 3 Card Blind MTG matches from 3cardblind.com. This application runs entirely in your browser without requiring a server or build process.
 
 Always reference these instructions first and fallback to search or bash commands only when you encounter unexpected information that does not match the info here.
@@ -18,17 +18,29 @@ Before scoring a match the guru must claim it by entering their guru signature. 
 
 ### Repository Structure
 ```
-/home/runner/work/3cb-visual-guru/3cb-visual-guru/
+/home/runner/work/the-stylus/the-stylus/
 ├── .git/
 ├── .gitignore
 ├── README.md
 ├── package.json
-├── index.html                 # Main entry point
+├── site.webmanifest          # PWA manifest
+├── index.html                # Main entry point
+├── favicons/                 # Generated favicon files
+│   ├── favicon.ico
+│   ├── favicon-16x16.png
+│   ├── favicon-32x32.png
+│   ├── apple-touch-icon.png
+│   ├── android-chrome-192x192.png
+│   └── android-chrome-512x512.png
+├── images/                   # Image assets
+│   ├── stylus.png           # Source logo image
+│   └── stylus-logo.png      # Header logo (64px height)
 ├── js/
-│   ├── main.js               # Application bootstrap
-│   ├── config.js             # Google API configuration
-│   ├── modules/              # Core application modules
+│   ├── main.js              # Application bootstrap
+│   ├── config.js            # Google API configuration
+│   ├── modules/             # Core application modules
 │   │   ├── authManager.js
+│   │   ├── deckNotesEditor.js
 │   │   ├── googleSheetsAPI.js
 │   │   ├── guruAnalysisInterface.js
 │   │   ├── guruSignature.js
@@ -36,11 +48,11 @@ Before scoring a match the guru must claim it by entering their guru signature. 
 │   │   ├── scryfallAPI.js
 │   │   ├── uiController.js
 │   │   └── userPreferences.js
-│   └── utils/                # Utility functions
+│   └── utils/               # Utility functions
 │       ├── constants.js
 │       └── domUtils.js
 └── styles/
-    └── main.css             # All application styles
+    └── main.css            # All application styles
 ```
 
 ### Key Files Overview

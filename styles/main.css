@@ -40,11 +40,25 @@ header {
     flex: 1;
 }
 
+.title-with-logo {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.header-logo {
+    height: 64px;
+    width: auto;
+    object-fit: contain;
+    filter: drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.1));
+}
+
 .header-title h1 {
     color: #2c3e50;
     margin-bottom: 10px;
     font-size: 2.5rem;
     text-align: left;
+    margin: 0;
 }
 
 .header-title p {
@@ -1479,6 +1493,14 @@ section h2, .login-section h2 {
     .header-content {
         flex-direction: column;
         text-align: center;
+    }
+    
+    .title-with-logo {
+        justify-content: center;
+    }
+    
+    .header-logo {
+        height: 48px;
     }
     
     .header-title h1 {
