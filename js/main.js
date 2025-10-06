@@ -111,13 +111,6 @@ class ThreeCardBlindGuruTool {
                 // Reload recent pods from Google appData after login
                 await this.recentPodsManager.loadRecentPods();
                 this.recentPodsManager.renderRecentPods();
-                
-                // Check if we should go directly to analysis mode based on URL parameters
-                const hasUrlParameters = await this.checkForDirectAnalysisMode();
-
-                if (!hasUrlParameters) {
-                    // No URL parameters, normal flow is already handled by renderRecentPods above
-                }
             }
         });
         // Clear preferences on logout

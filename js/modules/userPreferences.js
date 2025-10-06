@@ -166,6 +166,8 @@ export class UserPreferences {
                 recentPodsCount: preferences.recentPods?.length || 0,
                 lastUpdated: preferences.lastUpdated
             });
+
+            this.cache = preferences;
             
             return preferences;
         } catch (error) {
