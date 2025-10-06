@@ -61,10 +61,16 @@ class ThreeCardBlindGuruTool {
                 // Initialize recent pods manager after user preferences are set
                 await this.recentPodsManager.initialize();
 
-                if (this.authManager.isLoggedIn()) {
-                    this.uiController.showStatus('Ready to load pod sheet', 'success');
-                } else {
-                    this.authManager.showLoginScreen();
+                // Check if we should go directly to analysis mode based on URL parameters
+                const hasUrlParameters = await this.checkForDirectAnalysisMode();
+
+                if (!hasUrlParameters) {
+                    // No URL parameters, show normal home screen
+                    if (this.authManager.isLoggedIn()) {
+                        this.uiController.showStatus('Ready to load pod sheet', 'success');
+                    } else {
+                        this.authManager.showLoginScreen();
+                    }
                 }
             } else {
                 // User is not authenticated, show login screen
@@ -105,6 +111,13 @@ class ThreeCardBlindGuruTool {
                 // Reload recent pods from Google appData after login
                 await this.recentPodsManager.loadRecentPods();
                 this.recentPodsManager.renderRecentPods();
+                
+                // Check if we should go directly to analysis mode based on URL parameters
+                const hasUrlParameters = await this.checkForDirectAnalysisMode();
+
+                if (!hasUrlParameters) {
+                    // No URL parameters, normal flow is already handled by renderRecentPods above
+                }
             }
         });
         // Clear preferences on logout
@@ -189,7 +202,73 @@ class ThreeCardBlindGuruTool {
         });
     }
 
-    async loadSheet() {
+    async checkForDirectAnalysisMode() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const podId = urlParams.get('pod');
+        
+        if (podId) {
+            console.log('🔗 URL parameters detected, going directly to analysis mode');
+            
+            // Hide the home screen sections
+            this.uiController.hideHomeScreen();
+            
+            // Handle URL parameters for auto-loading
+            await this.handleURLParameters();
+            
+            return true; // Indicates we went to analysis mode
+        }
+        
+        return false; // No URL parameters, use normal flow
+    }
+
+    async handleURLParameters() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const podId = urlParams.get('pod');
+        const guruColor = urlParams.get('guru');
+        const rowNumber = urlParams.get('row');
+        
+        if (podId) {
+            try {
+                console.log(`🔗 Auto-loading pod from URL: ${podId}`);
+                
+                // Load the pod by ID
+                await this.loadSheet(podId);
+                
+                // Set guru color if specified
+                if (guruColor && ['red', 'blue', 'green'].includes(guruColor.toLowerCase())) {
+                    console.log(`🎨 Setting guru color from URL: ${guruColor}`);
+                    await this.analysisInterface.changeGuruColor(guruColor.toLowerCase());
+                }
+                
+                // Navigate to specific row if specified
+                if (rowNumber) {
+                    const rowIndex = parseInt(rowNumber, 10) - 1; // Convert to 0-indexed
+                    if (rowIndex >= 0) {
+                        console.log(`📍 Navigating to row from URL: ${rowNumber}`);
+                        this.analysisInterface.currentRowIndex = rowIndex;
+                        await this.analysisInterface.showCurrentRow();
+                    }
+                }
+                
+            } catch (error) {
+                console.warn('Failed to auto-load pod from URL:', error);
+                this.uiController.showStatus(`Could not load pod from URL: ${error.message}`, 'error');
+                
+                // Clear invalid pod ID from URL
+                this.clearInvalidURLParameters();
+            }
+        }
+    }
+
+    clearInvalidURLParameters() {
+        const newUrl = new URL(window.location);
+        newUrl.searchParams.delete('pod');
+        newUrl.searchParams.delete('guru');
+        newUrl.searchParams.delete('row');
+        window.history.replaceState({}, '', newUrl);
+    }
+
+    async loadSheet(sheetId = null) {
         // Check if guru signature is set before loading sheet
         if (!this.guruSignature.hasSignature()) {
             this.uiController.showStatus('Please set your Guru Signature before loading a sheet', 'error');
@@ -197,34 +276,45 @@ class ThreeCardBlindGuruTool {
             return;
         }
 
-        const url = document.getElementById('sheet-url').value.trim();
+        let targetSheetId = sheetId;
+        let sheetUrl = '';
         
-        if (!url) {
-            this.uiController.showStatus('Please enter a pod Google Sheets URL', 'error');
-            return;
-        }
+        // If no sheetId provided, get it from the URL input
+        if (!targetSheetId) {
+            const url = document.getElementById('sheet-url').value.trim();
+            
+            if (!url) {
+                this.uiController.showStatus('Please enter a pod Google Sheets URL', 'error');
+                return;
+            }
 
-        if (!this.isValidGoogleSheetsUrl(url)) {
-            this.uiController.showStatus('Please enter a valid Google Sheets URL', 'error');
-            return;
+            if (!this.isValidGoogleSheetsUrl(url)) {
+                this.uiController.showStatus('Please enter a valid Google Sheets URL', 'error');
+                return;
+            }
+            
+            targetSheetId = this.extractSheetId(url);
+            sheetUrl = url;
+        } else {
+            // Construct URL from sheet ID for recent pods functionality
+            sheetUrl = `https://docs.google.com/spreadsheets/d/${targetSheetId}`;
         }
 
         try {
             this.uiController.showStatus('Loading pod...', 'loading');
             this.uiController.setLoadingState(true);
 
-            const sheetId = this.extractSheetId(url);
-            const sheetData = await this.sheetsAPI.getSheetData(sheetId);
+            const sheetData = await this.sheetsAPI.getSheetData(targetSheetId);
             
             this.currentSheetData = sheetData;
-            this.currentSheetId = sheetId;
+            this.currentSheetId = targetSheetId;
             
             // Load data into the analysis interface instead of the renderer
             await this.analysisInterface.loadData(sheetData);
-            this.uiController.showSheetEditor(sheetData.title || 'Untitled Pod', sheetId);
+            this.uiController.showSheetEditor(sheetData.title || 'Untitled Pod', targetSheetId);
             
             // Add to recent pods
-            this.recentPodsManager.addRecentPod(sheetId, sheetData.title || 'Untitled Pod', url);
+            this.recentPodsManager.addRecentPod(targetSheetId, sheetData.title || 'Untitled Pod', sheetUrl);
             this.uiController.showStatus(`Loaded pod - ${sheetData.title || 'Untitled Pod'}`, 'success');
 
         } catch (error) {

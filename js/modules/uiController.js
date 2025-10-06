@@ -81,7 +81,34 @@ export class UIController {
         this.sheetEditor.style.display = 'none';
     }
 
+    clearURLParameters() {
+        // Clear pod-related parameters from the URL when returning to home
+        const newUrl = new URL(window.location);
+        newUrl.searchParams.delete('pod');
+        newUrl.searchParams.delete('guru');
+        newUrl.searchParams.delete('row');
+        window.history.replaceState({}, '', newUrl);
+    }
+
+    hideHomeScreen() {
+        // Hide the home screen sections to go directly to analysis mode
+        const sheetInputSection = document.getElementById('sheet-input-section');
+        const guruSignatureSection = document.getElementById('guru-signature-section');
+        
+        if (sheetInputSection) {
+            sheetInputSection.style.display = 'none';
+        }
+        if (guruSignatureSection) {
+            guruSignatureSection.style.display = 'none';
+        }
+        
+        console.log('🏠 Home screen hidden for direct analysis mode');
+    }
+
     showSheetInputSection() {
+        // Clear URL parameters when returning to home
+        this.clearURLParameters();
+        
         // Show the input sections again when exiting fullscreen analysis
         const sheetInputSection = document.getElementById('sheet-input-section');
         const header = document.querySelector('header');

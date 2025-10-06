@@ -246,6 +246,29 @@ export class GuruAnalysisInterface {
         this.updateGuruColorDropdown();
     }
 
+    /**
+     * Update the browser URL with current pod ID, guru color, and row number
+     */
+    updateURL() {
+        if (!this.currentData?.sheetId) return;
+        
+        const newUrl = new URL(window.location);
+        newUrl.searchParams.set('pod', this.currentData.sheetId);
+        
+        if (this.currentRowIndex !== undefined && this.allRows?.length > 0) {
+            newUrl.searchParams.set('row', (this.currentRowIndex + 1).toString());
+        }
+        
+        if (this.currentGuruColor) {
+            newUrl.searchParams.set('guru', this.currentGuruColor);
+        }
+
+        window.history.replaceState({ 
+            podId: this.currentData.sheetId,
+            guruColor: this.currentGuruColor,
+            rowIndex: this.currentRowIndex 
+        }, '', newUrl);
+    }
 
     async loadData(sheetData, guruColorAlreadyDetermined = false, showMatchTable = false) {
         this.currentData = sheetData;
@@ -712,6 +735,9 @@ export class GuruAnalysisInterface {
     }
 
     async showCurrentRow() {
+        // Update URL with current state
+        this.updateURL();
+        
         if (this.currentRowIndex >= this.allRows.length) {
             return;
         }
@@ -1843,6 +1869,7 @@ export class GuruAnalysisInterface {
     }
 
     showDeckNotesEditor(notesData) {
+        this.updateURL();
         if (!this.deckNotesEditor) {
             // Create a new instance if it doesn't exist
             this.deckNotesEditor = new DeckNotesEditor({
