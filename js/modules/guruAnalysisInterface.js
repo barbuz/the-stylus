@@ -797,12 +797,8 @@ export class GuruAnalysisInterface {
             analysisElement.className = 'scoring-value';
         }
 
-        // Check if current guru has provided an analysis - independent of outcome value
-        const currentGuruAnalysis = this.getCurrentGuruAnalysis(currentRow);
-        if (currentGuruAnalysis && currentGuruAnalysis.trim() !== '') {
-            // Show current guru's analysis with other gurus' analyses
-            analysisElement.innerHTML = this.buildAnalysisDisplayWithOthers(currentRow, currentRow.outcomeValue || '');
-        }
+        // Show current guru's analysis with other gurus' analyses
+        analysisElement.innerHTML = this.buildAnalysisDisplayWithOthers(currentRow, currentRow.outcomeValue || '');
 
         // Check if this row is claimed by another guru
         const currentRowSignature = this.getCurrentRowSignature(currentRow);
@@ -1670,23 +1666,23 @@ export class GuruAnalysisInterface {
         const allAnalyses = [];
         
         // Add current guru's analysis first
-        if (currentGuruAnalysis && currentGuruAnalysis.trim() !== '') {
-            const currentGuruName = this.currentGuruColor.charAt(0).toUpperCase() + this.currentGuruColor.slice(1);
-            allAnalyses.push({ 
-                name: currentGuruName, 
-                value: currentGuruAnalysis, 
-                isCurrent: true 
-            });
-        }
+        const currentGuruName = this.currentGuruColor.charAt(0).toUpperCase() + this.currentGuruColor.slice(1);
+        allAnalyses.push({ 
+            name: currentGuruName, 
+            value: currentGuruAnalysis, 
+            isCurrent: true 
+        });
+
+        const showOtherGurus = currentGuruAnalysis && currentGuruAnalysis.trim() !== '';
         
         // Add other guru analyses
-        if (this.currentGuruColor !== 'red' && currentRow.redAnalysis && currentRow.redAnalysis.trim() !== '') {
+        if (this.currentGuruColor !== 'red') {
             allAnalyses.push({ name: 'Red', value: currentRow.redAnalysis, isCurrent: false });
         }
-        if (this.currentGuruColor !== 'blue' && currentRow.blueAnalysis && currentRow.blueAnalysis.trim() !== '') {
+        if (this.currentGuruColor !== 'blue') {
             allAnalyses.push({ name: 'Blue', value: currentRow.blueAnalysis, isCurrent: false });
         }
-        if (this.currentGuruColor !== 'green' && currentRow.greenAnalysis && currentRow.greenAnalysis.trim() !== '') {
+        if (this.currentGuruColor !== 'green') {
             allAnalyses.push({ name: 'Green', value: currentRow.greenAnalysis, isCurrent: false });
         }
         
@@ -1694,16 +1690,14 @@ export class GuruAnalysisInterface {
         let html = '<div class="analysis-list">';
         
         // Show outcome header for all cases
-        if (outcomeValue && outcomeValue.trim() !== '') {
-            const outcomeDisplay = this.getOutcomeDisplayName(outcomeValue);
-            html += `<div class="outcome-header">${outcomeDisplay}</div>`;
-        }
+        const outcomeDisplay = this.getOutcomeDisplayName(outcomeValue);
+        html += `<div class="outcome-header">${outcomeDisplay}</div>`;
         
         html += '<ul class="guru-analyses-list">';
         
         allAnalyses.forEach(analysis => {
-            const displayValue = this.formatAnalysisValue(analysis.value);
-            const cssClass = this.getAnalysisClass(analysis.value);
+            const displayValue = showOtherGurus || !analysis.value ? this.formatAnalysisValue(analysis.value) : '███';
+            const cssClass = showOtherGurus ? this.getAnalysisClass(analysis.value) : 'other';
             const prefix = analysis.isCurrent ? 'You' : analysis.name;
             
             html += `<li class="guru-analysis-item">

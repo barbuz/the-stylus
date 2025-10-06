@@ -1023,7 +1023,6 @@ section h2, .login-section h2 {
     font-weight: 600;
     min-height: 60px;
     text-align: center;
-    margin-bottom: 8px;
 }
 
 .current-analysis.win {
@@ -1364,8 +1363,7 @@ section h2, .login-section h2 {
 
 /* Highlighted states for current analysis */
 .scoring-btn.current-analysis {
-    border: 3px solid;
-    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.8), 0 0 15px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.8), 0 0 15px rgba(0, 0, 0, 0.3);
     transform: scale(1.05);
     pointer-events: none;
     cursor: default;
@@ -1585,7 +1583,6 @@ section h2, .login-section h2 {
     }
     
     .scoring-btn.current-analysis {
-        border: 3px solid;
         transform: scale(1.02);
     }
     
