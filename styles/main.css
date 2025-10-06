@@ -949,7 +949,6 @@ section h2, .login-section h2 {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 10px;
     background: white;
     border-radius: 0;
     border: 1px solid #e9ecef;
