@@ -57,6 +57,19 @@ class ThreeCardBlindGuruTool {
                 if (this.authManager.userPreferences && this.authManager.userPreferences.isInitialized) {
                     this.recentPodsManager.setUserPreferences(this.authManager.userPreferences);
                 }
+
+                // Try to initialize the guru signature from persisted preferences so it's
+                // available immediately after login (avoids race where loadSheet blocks)
+                try {
+                    if (this.authManager.userPreferences) {
+                        const persistedSig = await this.authManager.userPreferences.getGuruSignature();
+                        if (persistedSig && persistedSig.trim() !== '') {
+                            await this.guruSignature.initSignature(persistedSig);
+                        }
+                    }
+                } catch (err) {
+                    console.warn('Could not initialize guru signature from preferences:', err);
+                }
                 
                 // Initialize recent pods manager after user preferences are set
                 await this.recentPodsManager.initialize();
@@ -264,6 +277,7 @@ class ThreeCardBlindGuruTool {
     async loadSheet(sheetId = null) {
         // Check if guru signature is set before loading sheet
         if (!this.guruSignature.hasSignature()) {
+            console.warn('Guru signature not set, cannot load sheet');
             this.uiController.showStatus('Please set your Guru Signature before loading a sheet', 'error');
             this.guruSignature.showSignatureSection();
             return;
