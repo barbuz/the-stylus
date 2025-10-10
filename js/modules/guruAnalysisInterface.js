@@ -835,6 +835,7 @@ export class GuruAnalysisInterface {
         const claimButton = document.getElementById('claim-button');
         const claimDeckButton = document.getElementById('claim-deck-button');
         const unclaimButton = document.getElementById('unclaim-button');
+        const clearButton = document.getElementById('clear-result-button');
         
         if (isRowClaimedByAnotherGuru) {
             // Hide scoring buttons, claim button, and unclaim button, show claimed message
@@ -842,6 +843,7 @@ export class GuruAnalysisInterface {
             if (claimButton) claimButton.style.display = 'none';
             if (claimDeckButton) claimDeckButton.style.display = 'none';
             if (unclaimButton) unclaimButton.style.display = 'none';
+            if (clearButton) clearButton.style.display = 'none';
             
             // Get the current analysis value for the claimed row
             const currentAnalysis = this.getCurrentGuruAnalysis(currentRow);
@@ -869,6 +871,7 @@ export class GuruAnalysisInterface {
             scoringButtons.forEach(btn => btn.style.display = 'none');
             if (claimedMessage) claimedMessage.style.display = 'none';
             if (unclaimButton) unclaimButton.style.display = 'none';
+            if (clearButton) clearButton.style.display = 'none';
 
             // --- Claim Match Button ---
             let claimBtn = claimButton;
