@@ -14,8 +14,7 @@ export class GuruAnalysisInterface {
         this.scryfallAPI = new ScryfallAPI();
         this.currentData = null;
         this.allRows = [];
-        this.currentRowIndex = 0;
-        this.currentSheetIndex = 0;
+        this.currentRowIndex = -1;
         this.currentGuruColor = null;
         this.numDiscrepancies = 0;
         // Store column indices as attributes for easier access
@@ -29,6 +28,21 @@ export class GuruAnalysisInterface {
         // Handle window resize for mobile/desktop layout changes
         this.handleResize = this.handleResize.bind(this);
         window.addEventListener('resize', this.handleResize);
+    }
+
+    reset() {
+        this.currentData = null;
+        this.allRows = [];
+        this.currentRowIndex = -1;
+        this.currentGuruColor = null;
+        this.numDiscrepancies = 0;
+        // Store column indices as attributes for easier access
+        this.redAnalysisColIndex = -1;
+        this.blueAnalysisColIndex = -1;
+        this.greenAnalysisColIndex = -1;
+        this.redSignatureColIndex = -1;
+        this.blueSignatureColIndex = -1;
+        this.greenSignatureColIndex = -1;
     }
 
     determineGuruColorFromSheet(sheetData) {
@@ -271,7 +285,7 @@ export class GuruAnalysisInterface {
         }, '', newUrl);
     }
 
-    async loadData(sheetData, guruColorAlreadyDetermined = false, showMatchTable = false) {
+    async loadData(sheetData, guruColor = null, rowNumber = 0) {
         this.currentData = sheetData;
 
         if (sheetData.sheets.some(sheet => sheet.title === 'Merged Gurus' && sheet.hidden)) {
@@ -279,14 +293,18 @@ export class GuruAnalysisInterface {
             if (notesData) {
                 // Show deck notes editor if available
                 this.showDeckNotesEditor(notesData);
-                return;
+                return false;
             } else {
                 this.uiController.showError('No Deck Notes sheet found. Please ensure it exists to continue.');
-                return;
+                return false;
             }
         }
+
+        if (rowNumber !== null && rowNumber > 0) {
+            this.currentRowIndex = rowNumber - 1;
+        }
         
-        if (!guruColorAlreadyDetermined) {
+        if (guruColor === null) {
             try {
                 // Determine the current guru color from the actual sheet data
                 this.currentGuruColor = this.determineGuruColorFromSheet(sheetData);
@@ -294,20 +312,20 @@ export class GuruAnalysisInterface {
             } catch (error) {                
                 // Check if this is a "signature not found" error - offer color selection
                 if (error.message.includes('not found in any analysis column')) {
-                    this.showGuruColorSelection(sheetData);
-                    return;
+                    this.showGuruColorSelection(sheetData); 
+                    return false;
                 } else {
                     // For other errors, show a generic error message
                     console.error('Error determining guru color:', error);
                     this.uiController.showError('An error occurred while determining guru color');
-                    return;
+                    return false;
                 }
             }
+        } else if (guruColor !== null) {
+            this.currentGuruColor = guruColor.toLowerCase();
         }
         
         this.allRows = [];
-        this.currentRowIndex = 0;
-        this.currentSheetIndex = 0;
 
         // Process deck notes for reference
         this.deckNotesMap = this.processDeckNotes(sheetData);
@@ -325,22 +343,18 @@ export class GuruAnalysisInterface {
         if (this.allRows.length === 0) {
             this.showNoDataMessage();
         } else {
-            if (showMatchTable) {
-                // Show the match picker directly
-                this.showMatchTableModal();
-            } else {
+            if (this.currentRowIndex === null || this.currentRowIndex === undefined || this.currentRowIndex < 0 || this.currentRowIndex >= this.allRows.length) {
                 // Find the first row with empty Guru Analysis
                 let firstEmpty = this.findFirstEmptyAnalysis();
                 if (firstEmpty == null) {
                     this.currentRowIndex = 0;
-                    await this.showCurrentRow();
                     this.showCompletionMessage();
                 } else {
                     this.currentRowIndex = firstEmpty;
-                    await this.showCurrentRow();
                 }
             }
         }
+        return true;
     }
 
     processDeckNotes(sheetData) {
@@ -739,7 +753,8 @@ export class GuruAnalysisInterface {
         // Update URL with current state
         this.updateURL();
         
-        if (this.currentRowIndex >= this.allRows.length) {
+        if (this.currentRowIndex >= this.allRows.length || this.currentRowIndex < 0) {
+            this.showMatchTableModal();
             return;
         }
 
@@ -1546,6 +1561,9 @@ export class GuruAnalysisInterface {
             
             // Restore position to the same row (or closest valid row)
             this.currentRowIndex = Math.min(currentRowIndex, this.allRows.length - 1);
+
+            // Show the current row with fresh data
+            await this.showCurrentRow();
             
             console.log('🔄 Reloaded all data, restored to row:', this.currentRowIndex + 1);
             
@@ -2021,8 +2039,8 @@ export class GuruAnalysisInterface {
         
         // Continue with the normal data loading process, but skip guru color determination
         // Skip the loading state to avoid DOM element conflicts
-        await this.loadData(sheetData, true);
-        this.showMatchTableModal();
+        await this.loadData(sheetData, color);
+        await this.showCurrentRow();
     }
 
 
@@ -2213,9 +2231,10 @@ export class GuruAnalysisInterface {
             }
         });
 
-        // Click outside modal closes
+        // Click outside modal closes if a row is selected
         overlay.addEventListener('mousedown', (e) => {
-            if (e.target === overlay) {
+            if (e.target === overlay && this.currentRowIndex !== null) {
+                this.showCurrentRow();
                 this.closeMatchTableModal();
             }
         });

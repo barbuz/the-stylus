@@ -238,29 +238,17 @@ class ThreeCardBlindGuruTool {
         
         if (podId) {
             try {
-                console.log(`🔗 Auto-loading pod from URL: ${podId}`);
+                console.log(`🔗 Auto-loading pod from URL: ${podId}, color: ${guruColor}, row: ${rowNumber}`);
                 
+                this.showLoading('Loading pod data...');
                 // Load the pod by ID
-                await this.loadSheet(podId);
+                await this.loadSheet(podId, guruColor, parseInt(rowNumber, 10));
                 
-                // Set guru color if specified
-                if (guruColor && ['red', 'blue', 'green'].includes(guruColor.toLowerCase())) {
-                    console.log(`🎨 Setting guru color from URL: ${guruColor}`);
-                    await this.analysisInterface.changeGuruColor(guruColor.toLowerCase());
-                }
-                
-                // Navigate to specific row if specified
-                if (rowNumber) {
-                    const rowIndex = parseInt(rowNumber, 10) - 1; // Convert to 0-indexed
-                    if (rowIndex >= 0) {
-                        console.log(`📍 Navigating to row from URL: ${rowNumber}`);
-                        this.analysisInterface.currentRowIndex = rowIndex;
-                        await this.analysisInterface.showCurrentRow();
-                    }
-                }
+                this.hideLoading();
                 
             } catch (error) {
                 console.warn('Failed to auto-load pod from URL:', error);
+                this.hideLoading();
                 this.uiController.showStatus(`Could not load pod from URL: ${error.message}`, 'error');
                 
                 // Clear invalid pod ID from URL
@@ -278,7 +266,7 @@ class ThreeCardBlindGuruTool {
         window.history.replaceState({}, '', newUrl);
     }
 
-    async loadSheet(sheetId = null) {
+    async loadSheet(sheetId = null, guruColor = null, rowNumber = null) {
         // Check if guru signature is set before loading sheet
         if (!this.guruSignature.hasSignature()) {
             console.warn('Guru signature not set, cannot load sheet');
@@ -320,9 +308,13 @@ class ThreeCardBlindGuruTool {
             this.currentSheetData = sheetData;
             this.currentSheetId = targetSheetId;
             
-            // Load data into the analysis interface instead of the renderer
-            await this.analysisInterface.loadData(sheetData);
+            // Load data into the analysis interface
+            this.analysisInterface.reset();
+            const isLoaded = await this.analysisInterface.loadData(sheetData, guruColor, rowNumber);
             this.uiController.showSheetEditor(sheetData.title || 'Untitled Pod', targetSheetId);
+            if (isLoaded) {
+                await this.analysisInterface.showCurrentRow();
+            }
             
             // Add to recent pods
             this.recentPodsManager.addRecentPod(targetSheetId, sheetData.title || 'Untitled Pod', sheetUrl);
