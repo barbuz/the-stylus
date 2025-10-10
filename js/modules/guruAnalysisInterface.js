@@ -283,6 +283,10 @@ export class GuruAnalysisInterface {
             guruColor: this.currentGuruColor,
             rowIndex: this.currentRowIndex 
         }, '', newUrl);
+
+        // Update title with current spreadsheet title
+        const sheetName = this.currentData?.title || 'Unknown Pod';
+        document.title = `${sheetName} - The Stylus`;
     }
 
     async loadData(sheetData, guruColor = null, rowNumber = 0) {
@@ -752,7 +756,7 @@ export class GuruAnalysisInterface {
     async showCurrentRow() {
         // Update URL with current state
         this.updateURL();
-        
+
         if (this.currentRowIndex >= this.allRows.length || this.currentRowIndex < 0) {
             this.showMatchTableModal();
             return;
