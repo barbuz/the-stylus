@@ -231,7 +231,10 @@ class ThreeCardBlindGuruTool {
         const urlParams = new URLSearchParams(window.location.search);
         const podId = urlParams.get('pod');
         const guruColor = urlParams.get('guru');
-        const rowNumber = urlParams.get('row');
+        let rowNumber = urlParams.get('match');
+        if (rowNumber === null || rowNumber === undefined) {
+            rowNumber = urlParams.get('row');
+        }
         
         if (podId) {
             try {
@@ -271,6 +274,7 @@ class ThreeCardBlindGuruTool {
         newUrl.searchParams.delete('pod');
         newUrl.searchParams.delete('guru');
         newUrl.searchParams.delete('row');
+        newUrl.searchParams.delete('match');
         window.history.replaceState({}, '', newUrl);
     }
 

@@ -87,6 +87,7 @@ export class UIController {
         newUrl.searchParams.delete('pod');
         newUrl.searchParams.delete('guru');
         newUrl.searchParams.delete('row');
+        newUrl.searchParams.delete('match');
         window.history.replaceState({}, '', newUrl);
     }
 

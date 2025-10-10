@@ -256,7 +256,8 @@ export class GuruAnalysisInterface {
         newUrl.searchParams.set('pod', this.currentData.sheetId);
         
         if (this.currentRowIndex !== undefined && this.allRows?.length > 0) {
-            newUrl.searchParams.set('row', (this.currentRowIndex + 1).toString());
+            newUrl.searchParams.delete('row');
+            newUrl.searchParams.set('match', (this.currentRowIndex + 1).toString());
         }
         
         if (this.currentGuruColor) {
@@ -746,7 +747,7 @@ export class GuruAnalysisInterface {
         
         // Update progress info
         document.getElementById('current-row-info').textContent = 
-            `Row ${this.currentRowIndex + 1} of ${this.allRows.length}`;
+            `Match ${this.currentRowIndex + 1} of ${this.allRows.length}`;
         this.updateGuruColorDisplay();
 
         // Load card images for both players
