@@ -341,7 +341,9 @@ class ThreeCardBlindGuruTool {
             this.currentSheetData = sheetData;
             
             // Reload data into the analysis interface
+            this.analysisInterface.reset();
             await this.analysisInterface.loadData(sheetData);
+            await this.analysisInterface.showCurrentRow();
             
             const totalRows = this.analysisInterface.getTotalRows();
             this.uiController.showStatus(`Refreshed - ${totalRows} rows available`, 'success');
