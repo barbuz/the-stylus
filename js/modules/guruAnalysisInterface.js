@@ -666,31 +666,43 @@ export class GuruAnalysisInterface {
         // Look for discrepancies that belong to current guru (have current guru's signature)
         for (let i = startFromIndex; i < this.allRows.length; i++) {
             const row = this.allRows[i];
-            // Check if this row has the current guru's signature
-            const rowSignatures = [row.redSignature, row.blueSignature, row.greenSignature];
-            if (rowSignatures.includes(currentSignature)) {
-                // Check for discrepancy
-                if (row.outcomeValue && row.outcomeValue.toLowerCase().trim() === 'discrepancy') {
-                    return i;
-                }
-            }
-        }
-        // If no discrepancies found from startFromIndex to end, loop back and search from beginning to startFromIndex
-        if (startFromIndex > 0) {
-            for (let i = 0; i < startFromIndex; i++) {
-                const row = this.allRows[i];
-                // Check if this row has the current guru's signature
-                const rowSignatures = [row.redSignature, row.blueSignature, row.greenSignature];
-                if (rowSignatures.includes(currentSignature)) {
+            // Determine which signature column (if any) matches the current signature for this row
+            const rowSignatures = {
+                red: row.redSignature,
+                blue: row.blueSignature,
+                green: row.greenSignature
+            };
+            for (const color of ['red', 'blue', 'green']) {
+                if (rowSignatures[color] === currentSignature) {
                     // Check for discrepancy
                     if (row.outcomeValue && row.outcomeValue.toLowerCase().trim() === 'discrepancy') {
-                        return i;
+                        return { index: i, color };
                     }
                 }
             }
         }
-        // If no discrepancies found, return the start index or 0
-        return startFromIndex === 0 ? 0 : startFromIndex;
+
+        // If no discrepancies found from startFromIndex to end, loop back and search from beginning to startFromIndex
+        if (startFromIndex > 0) {
+            for (let i = 0; i < startFromIndex; i++) {
+                const row = this.allRows[i];
+                const rowSignatures = {
+                    red: row.redSignature,
+                    blue: row.blueSignature,
+                    green: row.greenSignature
+                };
+                for (const color of ['red', 'blue', 'green']) {
+                    if (rowSignatures[color] === currentSignature) {
+                        if (row.outcomeValue && row.outcomeValue.toLowerCase().trim() === 'discrepancy') {
+                            return { index: i, color };
+                        }
+                    }
+                }
+            }
+        }
+
+        // If no discrepancies found, return the start index (or 0) and keep current color
+        return { index: startFromIndex === 0 ? 0 : startFromIndex, color: this.currentGuruColor };
     }
 
     getCurrentGuruAnalysis(row) {
@@ -1853,8 +1865,12 @@ export class GuruAnalysisInterface {
 
     async skipToNextDiscrepancy() {
         // Find the next row with discrepancy starting from after current row
-        const nextDiscrepancyIndex = this.findFirstDiscrepancy(this.currentRowIndex + 1);
-        this.currentRowIndex = nextDiscrepancyIndex;
+        const result = this.findFirstDiscrepancy(this.currentRowIndex + 1);
+        this.currentRowIndex = result.index;
+        // If a color was returned for the found row, switch to that guru color
+        if (result.color) {
+            this.currentGuruColor = result.color;
+        }
         await this.showCurrentRow();
     }
 
