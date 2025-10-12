@@ -769,6 +769,14 @@ export class GuruAnalysisInterface {
         // Update URL with current state
         this.updateURL();
 
+        // Show sheet link
+        const sheetTitle = document.getElementById('sheet-title');
+        const sheetLink = document.getElementById('google-sheet-link');
+        sheetTitle.textContent = this.currentData.title;
+        sheetLink.href = `https://docs.google.com/spreadsheets/d/${this.currentData.sheetId}/edit`;
+        sheetLink.target = '_blank';
+        sheetLink.title = 'Open pod in Google Sheets';
+
         if (this.currentRowIndex >= this.allRows.length || this.currentRowIndex < 0) {
             this.showMatchTableModal();
             return;
@@ -2051,7 +2059,6 @@ export class GuruAnalysisInterface {
         this.uiController.showSheetEditor();
         
         // Continue with the normal data loading process, but skip guru color determination
-        // Skip the loading state to avoid DOM element conflicts
         await this.loadData(sheetData, color);
         await this.showCurrentRow();
     }
@@ -2246,7 +2253,7 @@ export class GuruAnalysisInterface {
 
         // Click outside modal closes if a row is selected
         overlay.addEventListener('mousedown', (e) => {
-            if (e.target === overlay && this.currentRowIndex !== null) {
+            if (e.target === overlay && this.currentRowIndex >= 0) {
                 this.showCurrentRow();
                 this.closeMatchTableModal();
             }
