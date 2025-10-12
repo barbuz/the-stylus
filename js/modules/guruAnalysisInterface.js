@@ -1600,16 +1600,6 @@ export class GuruAnalysisInterface {
             // Rebuild data with fresh information
             this.currentData = freshSheetData;
             
-            try {
-                // Update guru color in case signature changed
-                this.currentGuruColor = this.determineGuruColorFromSheet(freshSheetData);
-                console.log(`Updated guru color: ${this.currentGuruColor}`);
-            } catch (error) {
-                console.warn('Error determining guru color during background refresh:', error);
-                // Don't throw error in background refresh, just log it
-                return;
-            }
-            
             this.allRows = [];
             
             // Process all sheets and collect rows that need analysis
