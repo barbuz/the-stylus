@@ -327,6 +327,7 @@ export class AuthManager {
                     // Try automatic re-authentication
                     const reauthSuccess = await this.attemptAutoReauth();
                     if (reauthSuccess) {
+                        this.isAuthenticated = true;
                         console.log('✅ Automatic re-authentication successful');
                         return true;
                     }
