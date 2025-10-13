@@ -187,7 +187,6 @@ export class DeckNotesEditor {
                         const removePreview = () => {
                             if (cardPreviewImg) cardPreviewImg.remove();
                             cardPreviewImg = null;
-                            document.removeEventListener('mousemove', movePreview);
                         };
                         cardDiv.addEventListener('mouseleave', removePreview, { once: true });
                     }, 200); // 200ms delay
