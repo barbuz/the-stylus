@@ -902,7 +902,7 @@ section h2, .login-section h2 {
 
 .navigation-controls {
     position: absolute;
-    top: 50%;
+    top: 1rem;
     left: 0;
     width: 100%;
     display: flex;
@@ -949,6 +949,52 @@ section h2, .login-section h2 {
     color: #ced4da;
     cursor: not-allowed;
     opacity: 0.6;
+}
+
+.middle-controls {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 100%;
+    display: flex;
+    justify-content: flex-end; /* align controls to the right */
+    align-items: center;
+    pointer-events: none; /* allow underlying elements to be clickable except buttons */
+    z-index: 2;
+    padding: 0 0.5rem;
+}
+
+.middle-controls .mirror-match-btn {
+    pointer-events: auto;
+    background: rgba(255,255,255,0.85);
+    border-radius: 50%;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    font-size: 1.6rem;
+    width: 2.5rem;
+    height: 2.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    transition: background 0.2s;
+    font-weight: bold;
+    color: #495057;
+    cursor: pointer;
+    line-height: 1;
+    position: absolute;
+    top: 50%; /* vertically center relative to controls */
+    right: 1rem; /* flush to the right */
+}
+
+.middle-controls .mirror-match-btn:hover {
+    background: #e9ecef;
+    border-color: #adb5bd;
+    color: #343a40;
+    transform: scale(1.05);
+}
+
+.middle-controls .mirror-match-btn:active {
+    transform: scale(0.95);
 }
 
 .player-deck h3 {

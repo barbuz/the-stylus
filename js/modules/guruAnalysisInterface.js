@@ -121,6 +121,7 @@ export class GuruAnalysisInterface {
         document.getElementById('next-btn').addEventListener('click', () => this.nextRow());
         document.getElementById('skip-btn').addEventListener('click', () => this.skipToNextIncomplete());
         document.getElementById('discrepancy-btn').addEventListener('click', () => this.skipToNextDiscrepancy());
+        document.getElementById('mirror-match-btn').addEventListener('click', () => this.skipToMirrorMatch());
 
         // Guru color selector
         this.bindGuruColorSelector();
@@ -1880,6 +1881,23 @@ export class GuruAnalysisInterface {
             this.currentGuruColor = result.color;
         }
         await this.showCurrentRow();
+    }
+
+    async skipToMirrorMatch() {
+        // Jump to the match where player1 and player2 are swapped
+        const currentRow = this.allRows[this.currentRowIndex];
+
+        const mirrorIndex = this.allRows.findIndex((row, index) =>
+            index !== this.currentRowIndex && // Exclude current row
+            row.player1 === currentRow.player2 && // Swapped players
+            row.player2 === currentRow.player1
+        );
+        if (mirrorIndex !== -1) {
+            this.currentRowIndex = mirrorIndex;
+            await this.showCurrentRow();
+        } else {
+            this.uiController.showStatus('No mirror match found for this game.', 'info');
+        }
     }
 
     showCompletionMessage() {
