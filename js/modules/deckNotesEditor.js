@@ -161,8 +161,8 @@ export class DeckNotesEditor {
                         const imgWidth = 320;  // match your maxWidth
                         const imgHeight = 440; // match your maxHeight
                         const padding = 12;
-                        let left = evt.clientX + 18;
-                        let top = evt.clientY - 20;
+                        let left = e.clientX + 18;
+                        let top = e.clientY - 20;
 
                         // Clamp right edge
                         if (left + imgWidth + padding > window.innerWidth) {
