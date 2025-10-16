@@ -5,6 +5,7 @@ import { GuruSignature } from './modules/guruSignature.js';
 import { GuruAnalysisInterface } from './modules/guruAnalysisInterface.js';
 import { RecentPodsManager } from './modules/recentPods.js';
 import { CONFIG } from './config.js';
+import { isValidGoogleSheetsUrl, extractSheetId } from './utils/urlUtils.js';
 
 class ThreeCardBlindGuruTool {
     constructor() {
@@ -12,7 +13,7 @@ class ThreeCardBlindGuruTool {
         this.guruSignature = new GuruSignature(this.authManager);
         this.sheetsAPI = new GoogleSheetsAPI(this.authManager);
         this.uiController = new UIController();
-        this.analysisInterface = new GuruAnalysisInterface(this.sheetsAPI, this.uiController, this.authManager);
+        this.analysisInterface = null; // Initialized after auth
         this.recentPodsManager = new RecentPodsManager();
 
         this.currentSheetData = null;
@@ -287,12 +288,12 @@ class ThreeCardBlindGuruTool {
                 return;
             }
 
-            if (!this.isValidGoogleSheetsUrl(url)) {
+            if (!isValidGoogleSheetsUrl(url)) {
                 this.uiController.showStatus('Please enter a valid Google Sheets URL', 'error');
                 return;
             }
             
-            targetSheetId = this.extractSheetId(url);
+            targetSheetId = extractSheetId(url);
             sheetUrl = url;
         } else {
             // Construct URL from sheet ID for recent pods functionality
@@ -309,7 +310,12 @@ class ThreeCardBlindGuruTool {
             this.currentSheetId = targetSheetId;
             
             // Load data into the analysis interface
-            this.analysisInterface.reset();
+            if (!this.analysisInterface) {
+                this.analysisInterface = new GuruAnalysisInterface(this.sheetsAPI, this.uiController, this.authManager.guruSignature);
+            } else {
+                this.analysisInterface.reset();
+                this.analysisInterface.setGuruSignature(this.authManager.guruSignature);
+            }
             const isLoaded = await this.analysisInterface.loadData(sheetData, guruColor, rowNumber);
             this.uiController.showSheetEditor(sheetData.title || 'Untitled Pod', targetSheetId);
             if (isLoaded) {
@@ -352,16 +358,6 @@ class ThreeCardBlindGuruTool {
             console.error('Error refreshing pod:', error);
             this.uiController.showStatus(`Error refreshing: ${error.message}`, 'error');
         }
-    }
-
-    isValidGoogleSheetsUrl(url) {
-        const pattern = /^https:\/\/docs\.google\.com\/spreadsheets\/d\/[a-zA-Z0-9-_]+/;
-        return pattern.test(url);
-    }
-
-    extractSheetId(url) {
-        const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-        return match ? match[1] : null;
     }
 }
 

@@ -4,13 +4,14 @@
 */
 import { ScryfallAPI } from './scryfallAPI.js';
 import { DeckNotesEditor } from './deckNotesEditor.js';
-import { CONFIG } from '../config.js';
+import { HubManager } from './hubManager.js';
 
 export class GuruAnalysisInterface {
-    constructor(sheetsAPI, uiController, authManager = null) {
+    constructor(sheetsAPI, uiController, guruSignature) {
         this.sheetsAPI = sheetsAPI;
         this.uiController = uiController;
-        this.authManager = authManager;
+        this.guruSignature = guruSignature;
+        this.hub = null;
         this.scryfallAPI = new ScryfallAPI();
         this.currentData = null;
         this.allRows = [];
@@ -31,6 +32,7 @@ export class GuruAnalysisInterface {
     }
 
     reset() {
+        this.hub = null;
         this.currentData = null;
         this.allRows = [];
         this.currentRowIndex = -1;
@@ -45,14 +47,20 @@ export class GuruAnalysisInterface {
         this.greenSignatureColIndex = -1;
     }
 
+    /**
+     * Updates the guru signature used for filtering and claiming matches
+     * @param {string} signature - The new guru signature
+     */
+    setGuruSignature(signature) {
+        if (this.guruSignature !== signature) {
+            this.guruSignature = signature;
+            console.log(`Guru signature updated to: ${signature}`);
+        }
+    }
+
     determineGuruColorFromSheet(sheetData) {
         // Get the current guru signature
-        let currentSignature = '';
-        if (this.authManager && this.authManager.guruSignature) {
-            currentSignature = this.authManager.guruSignature;
-        } else {
-            currentSignature = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE) || '';
-        }
+        let currentSignature = this.guruSignature || '';
 
         if (!currentSignature.trim()) {
             console.log('No guru signature found, defaulting to red');
@@ -305,6 +313,11 @@ export class GuruAnalysisInterface {
             }
         }
 
+        if (sheetData.metadata?.guruHubLink && sheetData.metadata?.podName ) {
+            this.hub = new HubManager(sheetData.metadata.guruHubLink, sheetData.metadata.podName);
+            this.hub.loadThreads();
+        }
+
         if (rowNumber !== null && rowNumber > 0) {
             this.currentRowIndex = rowNumber - 1;
         }
@@ -421,7 +434,6 @@ export class GuruAnalysisInterface {
                 }
                 
                 if (Object.keys(deckInfo).length > 0) {
-                    console.log('Adding deck info:', decklist.trim(), deckInfo);
                     deckNotesMap.set(decklist.trim(), deckInfo);
                 }
             }
@@ -499,7 +511,7 @@ export class GuruAnalysisInterface {
 
             // Check for discrepancies for the current guru
             const row_signatures = [redSignature, blueSignature, greenSignature];
-            if (row_signatures.includes(this.authManager.guruSignature)) {
+            if (row_signatures.includes(this.guruSignature)) {
                 // If the current guru signature is present, check for discrepancies
                 if (outcomeValue.toLowerCase().trim() === 'discrepancy') {
                     discrepancies++;
@@ -588,14 +600,6 @@ export class GuruAnalysisInterface {
     }
 
     findFirstEmptyAnalysis(startFromIndex = 0) {
-        // Get the current guru signature for filtering
-        let currentSignature = '';
-        if (this.authManager && this.authManager.guruSignature) {
-            currentSignature = this.authManager.guruSignature;
-        } else {
-            currentSignature = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE) || '';
-        }
-
         // Phase 1: Look for incomplete rows that belong to current guru (have current guru's signature)
         
         // First, find rows with current guru's signature that need analysis, starting from the given index
@@ -603,7 +607,7 @@ export class GuruAnalysisInterface {
             const row = this.allRows[i];
             
             // Check if this row has the current guru's signature
-            if (this.rowHasCurrentGuruSignature(row, currentSignature)) {
+            if (this.rowHasCurrentGuruSignature(row)) {
                 // Check for empty analysis
                 const currentAnalysis = this.getCurrentGuruAnalysis(row);
                 if (!currentAnalysis || currentAnalysis.trim() === '') {
@@ -618,7 +622,7 @@ export class GuruAnalysisInterface {
                 const row = this.allRows[i];
                 
                 // Check if this row has the current guru's signature
-                if (this.rowHasCurrentGuruSignature(row, currentSignature)) {
+                if (this.rowHasCurrentGuruSignature(row)) {
                     // Check for empty analysis
                     const currentAnalysis = this.getCurrentGuruAnalysis(row);
                     if (!currentAnalysis || currentAnalysis.trim() === '') {
@@ -657,13 +661,6 @@ export class GuruAnalysisInterface {
     }
 
     findFirstDiscrepancy(startFromIndex = 0) {
-        // Get the current guru signature for filtering
-        let currentSignature = '';
-        if (this.authManager && this.authManager.guruSignature) {
-            currentSignature = this.authManager.guruSignature;
-        } else {
-            currentSignature = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE) || '';
-        }
         // Look for discrepancies that belong to current guru (have current guru's signature)
         for (let i = startFromIndex; i < this.allRows.length; i++) {
             const row = this.allRows[i];
@@ -674,7 +671,7 @@ export class GuruAnalysisInterface {
                 green: row.greenSignature
             };
             for (const color of ['red', 'blue', 'green']) {
-                if (rowSignatures[color] === currentSignature) {
+                if (rowSignatures[color] === this.guruSignature) {
                     // Check for discrepancy
                     if (row.outcomeValue && row.outcomeValue.toLowerCase().trim() === 'discrepancy') {
                         return { index: i, color };
@@ -693,7 +690,7 @@ export class GuruAnalysisInterface {
                     green: row.greenSignature
                 };
                 for (const color of ['red', 'blue', 'green']) {
-                    if (rowSignatures[color] === currentSignature) {
+                    if (rowSignatures[color] === this.guruSignature) {
                         if (row.outcomeValue && row.outcomeValue.toLowerCase().trim() === 'discrepancy') {
                             return { index: i, color };
                         }
@@ -734,7 +731,8 @@ export class GuruAnalysisInterface {
         }
     }
 
-    rowHasCurrentGuruSignature(row, currentSignature) {
+    rowHasCurrentGuruSignature(row) {
+        const currentSignature = this.guruSignature || '';
         if (!currentSignature.trim()) {
             return false;
         }
@@ -791,8 +789,8 @@ export class GuruAnalysisInterface {
         this.updateGuruColorDisplay();
 
         // Load card images for both players
-        await this.loadPlayerCards('player1', currentRow.player1);
-        await this.loadPlayerCards('player2', currentRow.player2);
+        const cards1Loaded = this.loadPlayerCards('player1', currentRow.player1);
+        const cards2Loaded = this.loadPlayerCards('player2', currentRow.player2);
 
         // Update current outcome display
         const analysisElement = document.getElementById('current-analysis-value');
@@ -839,20 +837,14 @@ export class GuruAnalysisInterface {
         }
 
         // Show current guru's analysis with other gurus' analyses
-        analysisElement.innerHTML = this.buildAnalysisDisplayWithOthers(currentRow, currentRow.outcomeValue || '');
+        analysisElement.innerHTML = await this.buildAnalysisDisplayWithOthers(currentRow, currentRow.outcomeValue || '');
 
         // Check if this row is claimed by another guru
         const currentRowSignature = this.getCurrentRowSignature(currentRow);
-        let userGuruSignature = '';
-        if (this.authManager && this.authManager.guruSignature) {
-            userGuruSignature = this.authManager.guruSignature;
-        } else {
-            userGuruSignature = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE) || '';
-        }
 
-        const isRowClaimedByAnotherGuru = currentRowSignature && currentRowSignature.trim() !== '' && currentRowSignature !== userGuruSignature;
+        const isRowClaimedByAnotherGuru = currentRowSignature && currentRowSignature.trim() !== '' && currentRowSignature !== this.guruSignature;
         const isRowUnclaimed = !currentRowSignature || currentRowSignature.trim() === '';
-        const isRowOwnedByCurrentUser = currentRowSignature === userGuruSignature;
+        const isRowOwnedByCurrentUser = currentRowSignature === this.guruSignature;
 
         // Show/hide scoring buttons based on row ownership
         const scoringButtons = document.querySelectorAll('.scoring-btn');
@@ -1014,6 +1006,9 @@ export class GuruAnalysisInterface {
             }
         }
 
+        await cards1Loaded;
+        await cards2Loaded;
+
         // Preload next match's card images in the background
         this.preloadNextMatchCards();
     }
@@ -1028,17 +1023,6 @@ export class GuruAnalysisInterface {
         const player1Deck = currentRow.player1;
         if (!player1Deck) return;
 
-        // Get user's guru signature
-        let userGuruSignature = '';
-        if (this.authManager && this.authManager.guruSignature) {
-            userGuruSignature = this.authManager.guruSignature;
-        } else {
-            userGuruSignature = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE) || '';
-        }
-        if (!userGuruSignature.trim()) {
-            this.uiController.showStatus('No guru signature found. Please set your signature first.', 'error');
-            return;
-        }
 
         // Find all rows with the same Player 1 deck (total for this deck)
         const rowsToClaim = this.allRows.filter(row => row.player1 === player1Deck);
@@ -1056,7 +1040,7 @@ export class GuruAnalysisInterface {
                     sheetId: row.sheetId,
                     row: row.originalRowIndex + 1,
                     col: signatureColIndex + 1,
-                    value: userGuruSignature,
+                    value: this.guruSignature,
                     expectedValue: '',
                     valueType: 'string',
                     isMergedGuruUpdate: true,
@@ -1089,9 +1073,9 @@ export class GuruAnalysisInterface {
                     else {
                         // Successfully claimed this row, set the signature to user's guru signature
                         switch (this.currentGuruColor) {
-                            case 'red': match.redSignature = userGuruSignature; break;
-                            case 'blue': match.blueSignature = userGuruSignature; break;
-                            case 'green': match.greenSignature = userGuruSignature; break;
+                            case 'red': match.redSignature = this.guruSignature; break;
+                            case 'blue': match.blueSignature = this.guruSignature; break;
+                            case 'green': match.greenSignature = this.guruSignature; break;
                         }
                         actuallyClaimed++;
                     }
@@ -1277,7 +1261,7 @@ export class GuruAnalysisInterface {
             // Update outcome display
             const analysisElement = document.getElementById('current-analysis-value');
             if (analysisElement) {
-                analysisElement.innerHTML = this.buildAnalysisDisplayWithOthers(currentRow, newOutcome);
+                analysisElement.innerHTML = await this.buildAnalysisDisplayWithOthers(currentRow, newOutcome);
             }
             
             this.uiController.showStatus(`Analysis saved: ${this.getAnalysisLabel(value)}`, 'success');
@@ -1309,18 +1293,6 @@ export class GuruAnalysisInterface {
 
         const currentRow = this.allRows[this.currentRowIndex];
         
-        // Get user's guru signature
-        let userGuruSignature = '';
-        if (this.authManager && this.authManager.guruSignature) {
-            userGuruSignature = this.authManager.guruSignature;
-        } else {
-            userGuruSignature = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE) || '';
-        }
-
-        if (!userGuruSignature.trim()) {
-            this.uiController.showStatus('No guru signature found. Please set your signature first.', 'error');
-            return;
-        }
 
         // Show spinner on claim button
         const claimButton = document.getElementById('claim-button');
@@ -1341,7 +1313,7 @@ export class GuruAnalysisInterface {
                 filteredRowIndex: currentRow.rowIndex,
                 signatureColIndex,
                 guruColor: this.currentGuruColor,
-                userSignature: userGuruSignature
+                userSignature: this.guruSignature
             });
 
             // Use checked update to atomically claim the match only if signature is still empty
@@ -1350,7 +1322,7 @@ export class GuruAnalysisInterface {
                     sheetId: currentRow.sheetId,
                     row: currentRow.originalRowIndex + 1, // +1 because sheets are 1-indexed
                     col: signatureColIndex + 1, // +1 because sheets are 1-indexed
-                    value: userGuruSignature,
+                    value: this.guruSignature,
                     expectedValue: '', // Only update if current value is empty
                     valueType: 'string',
                     isMergedGuruUpdate: true,
@@ -1371,13 +1343,13 @@ export class GuruAnalysisInterface {
             // Update local data with the new signature
             switch (this.currentGuruColor) {
                 case 'red':
-                    currentRow.redSignature = userGuruSignature;
+                    currentRow.redSignature = this.guruSignature;
                     break;
                 case 'blue':
-                    currentRow.blueSignature = userGuruSignature;
+                    currentRow.blueSignature = this.guruSignature;
                     break;
                 case 'green':
-                    currentRow.greenSignature = userGuruSignature;
+                    currentRow.greenSignature = this.guruSignature;
                     break;
             }
 
@@ -1403,22 +1375,10 @@ export class GuruAnalysisInterface {
 
         const currentRow = this.allRows[this.currentRowIndex];
         
-        // Get user's guru signature to verify ownership
-        let userGuruSignature = '';
-        if (this.authManager && this.authManager.guruSignature) {
-            userGuruSignature = this.authManager.guruSignature;
-        } else {
-            userGuruSignature = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE) || '';
-        }
-
-        if (!userGuruSignature.trim()) {
-            this.uiController.showStatus('No guru signature found.', 'error');
-            return;
-        }
 
         // Verify that the current user owns this match
         const currentRowSignature = this.getCurrentRowSignature(currentRow);
-        if (currentRowSignature !== userGuruSignature) {
+        if (currentRowSignature !== this.guruSignature) {
             this.uiController.showStatus('You can only unclaim matches that you have claimed.', 'error');
             return;
         }
@@ -1449,7 +1409,7 @@ export class GuruAnalysisInterface {
                 filteredRowIndex: currentRow.rowIndex,
                 signatureColIndex,
                 guruColor: this.currentGuruColor,
-                userSignature: userGuruSignature
+                userSignature: this.guruSignature
             });
 
             // Clear the signature using clearCell helper
@@ -1502,12 +1462,10 @@ export class GuruAnalysisInterface {
 
         const currentRow = this.allRows[this.currentRowIndex];
 
-        // Get user's guru signature to verify ownership
-        const userGuruSignature = this.authManager.guruSignature;
 
         // Verify that the current user owns this match
         const currentRowSignature = this.getCurrentRowSignature(currentRow);
-        if (currentRowSignature !== userGuruSignature) {
+        if (currentRowSignature !== this.guruSignature) {
             this.uiController.showStatus('You can only clear results for matches you own.', 'error');
             return;
         }
@@ -1695,7 +1653,7 @@ export class GuruAnalysisInterface {
         return html;
     }
 
-    buildAnalysisDisplayWithOthers(currentRow, outcomeValue = '') {
+    async buildAnalysisDisplayWithOthers(currentRow, outcomeValue = '') {
         // Get current guru's analysis
         const currentGuruAnalysis = this.getCurrentGuruAnalysis(currentRow);
         
@@ -1743,7 +1701,29 @@ export class GuruAnalysisInterface {
             </li>`;
         });
         
-        html += '</ul></div>';
+        html += '</ul>';
+        
+        // If current guru has an evaluation and hub is available, try to get the Discord thread link
+        if (currentGuruAnalysis && currentGuruAnalysis.trim() !== '' && this.hub) {
+            try {
+                // Get the row index (ID#) to lookup the thread
+                const rowId = currentRow.rowIndex || this.currentRowIndex + 1;
+                const threadUrl = await this.hub.getThreadById(rowId);
+                
+                if (threadUrl) {
+                    html += `<div class="thread-link" style="margin-top: 8px; font-size: 0.85em;">
+                        <a href="${threadUrl}" target="_blank" rel="noopener noreferrer" style="color: #5865F2; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+                            <img src="images/Discord-Symbol-Blurple.svg" alt="Discord" style="width: 16px; height: 16px;" />
+                            Guru match help post
+                        </a>
+                    </div>`;
+                }
+            } catch (error) {
+                console.warn('Failed to fetch thread link:', error);
+            }
+        }
+        
+        html += '</div>';
         
         return html;
     }

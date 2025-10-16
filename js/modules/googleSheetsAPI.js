@@ -12,6 +12,14 @@ export class GoogleSheetsAPI {
             // Get metadata first to find all sheets
             const metadata = await this.getSheetMetadata(sheetId);
             
+            // Check for optional metadata sheet and start loading it in parallel
+            const metadataSheet = metadata.sheets.find(sheet => 
+                sheet.title.toLowerCase() === 'metadata'
+            );
+            const customMetadataPromise = metadataSheet 
+                ? this.getCustomMetadata(sheetId, metadataSheet)
+                : Promise.resolve({});
+            
             // Only process specific sheets needed for the application
             const requiredSheetNames = ['Deck Notes', 'Red Gurus', 'Blue Gurus', 'Green Gurus'];
             const sheetsToProcess = metadata.sheets.filter(sheet => 
@@ -45,14 +53,69 @@ export class GoogleSheetsAPI {
                 console.log("Merged Guru Sheets:", mergedGuruSheet);
             }
 
+            // Wait for custom metadata to finish loading
+            const customMetadata = await customMetadataPromise;
+            if (metadataSheet && Object.keys(customMetadata).length > 0) {
+                console.log('📋 Found metadata sheet:', customMetadata);
+            }
+
             return {
                 sheetId,
                 title: metadata.title,
-                sheets: allSheetsData
+                sheets: allSheetsData,
+                metadata: customMetadata
             };
         } catch (error) {
             console.error('API Error:', error);
             throw new Error(error.message || 'Failed to fetch sheet data');
+        }
+    }
+
+    /**
+     * Fetches custom metadata from a "metadata" sheet.
+     * The sheet should have rows with structure: [Variable Name, Checkmark, Value]
+     * Returns an object with variable names as keys and their values.
+     */
+    async getCustomMetadata(spreadsheetId, metadataSheet) {
+        try {
+            const response = await gapi.client.sheets.spreadsheets.values.get({
+                spreadsheetId: spreadsheetId,
+                range: `'${metadataSheet.title}'!A:C`,
+            });
+
+            const values = response.result.values || [];
+            const metadata = {};
+
+            // Parse each row (skip header if present)
+            for (let i = 0; i < values.length; i++) {
+                const row = values[i];
+                if (row && row.length >= 3) {
+                    const variableName = row[0]?.trim();
+                    // row[1] is the checkmark - we ignore it
+                    const value = row[2]?.trim();
+
+                    // Only add if we have both a variable name and value
+                    if (variableName && value) {
+                        // Convert to camelCase for consistency (e.g., "Pod Name" -> "podName")
+                        const key = variableName
+                            .split(' ')
+                            .map((word, index) => 
+                                index === 0 
+                                    ? word.toLowerCase() 
+                                    : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+                            )
+                            .join('');
+                        
+                        metadata[key] = value;
+                    }
+                }
+            }
+
+            return metadata;
+        } catch (error) {
+            console.error('API Error (getCustomMetadata):', error);
+            // Don't throw - just return empty object if metadata sheet can't be read
+            return {};
         }
     }
 
