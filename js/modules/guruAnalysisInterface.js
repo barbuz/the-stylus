@@ -314,7 +314,9 @@ export class GuruAnalysisInterface {
         }
 
         if (sheetData.metadata?.guruHubLink && sheetData.metadata?.podName ) {
-            this.hub = new HubManager(sheetData.metadata.guruHubLink, sheetData.metadata.podName);
+            if (!this.hub) {
+                this.hub = new HubManager(sheetData.metadata.guruHubLink, sheetData.metadata.podName);
+            }
             this.hub.loadThreads();
         }
 
