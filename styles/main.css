@@ -511,6 +511,14 @@ section h2, .login-section h2 {
     border: 1px solid #dee2e6;
 }
 
+.small-text {
+    font-size: 0.7em;
+    opacity: 0.6;
+    color: black;
+    text-decoration: none;
+    display: block;
+}
+
 /* Guru Color Dropdown Styles */
 /* Guru Color Trigger (clickable area for dropdown) */
 .guru-color-trigger {

@@ -773,7 +773,17 @@ export class GuruAnalysisInterface {
         // Show sheet link
         const sheetTitle = document.getElementById('sheet-title');
         const sheetLink = document.getElementById('google-sheet-link');
-        sheetTitle.textContent = this.currentData.title;
+        const subTitle = document.getElementById('full-sheet-title');
+        
+        // If pod name exists in metadata, show it prominently with sheet title below
+        if (this.currentData.metadata?.podName) {
+            sheetTitle.innerHTML = this.currentData.metadata.podName;
+            subTitle.textContent = this.currentData.title;
+        } else {
+            sheetTitle.textContent = this.currentData.title;
+            subTitle.textContent = '';
+        }
+        
         sheetLink.href = `https://docs.google.com/spreadsheets/d/${this.currentData.sheetId}/edit`;
         sheetLink.target = '_blank';
         sheetLink.title = 'Open pod in Google Sheets';
