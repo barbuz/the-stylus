@@ -511,6 +511,17 @@ section h2, .login-section h2 {
     border: 1px solid #dee2e6;
 }
 
+.analysis-progress #current-row-info {
+    cursor: pointer;
+}
+
+#current-row-info:hover, #current-row-info:focus {
+    background: #e3f2fd;
+    border-color: #90caf9;
+    box-shadow: 0 2px 8px rgba(33, 150, 243, 0.08);
+    outline: none;
+}
+
 .small-text {
     font-size: 0.7em;
     opacity: 0.6;

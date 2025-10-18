@@ -771,22 +771,33 @@ export class GuruAnalysisInterface {
         this.updateURL();
 
         // Show sheet link
-        const sheetTitle = document.getElementById('sheet-title');
-        const sheetLink = document.getElementById('google-sheet-link');
-        const subTitle = document.getElementById('full-sheet-title');
+        const sheetInfoSection = document.getElementById('sheet-info');
+        sheetInfoSection.innerHTML = '';
+        const sheetLink = document.createElement('a');
+        sheetLink.setAttribute('id', 'google-sheet-link');
+        sheetLink.target = '_blank';
+        sheetLink.href = `https://docs.google.com/spreadsheets/d/${this.currentData.sheetId}/edit`;
+        sheetLink.title = 'Open pod in Google Sheets';
+        sheetInfoSection.appendChild(sheetLink);
         
         // If pod name exists in metadata, show it prominently with sheet title below
         if (this.currentData.metadata?.podName) {
-            sheetTitle.innerHTML = this.currentData.metadata.podName;
+            const sheetTitle = document.createElement('h2');
+            sheetTitle.setAttribute('id', 'sheet-title');
+            sheetTitle.textContent = `${this.currentData.metadata.podName} ${this.currentRowIndex + 1}`;
+            sheetInfoSection.insertBefore(sheetTitle, sheetLink);
+            
+            const subTitle = document.createElement('small');
+            subTitle.setAttribute('id', 'full-sheet-title');
+            subTitle.setAttribute('class', 'small-text')
             subTitle.textContent = this.currentData.title;
+            sheetLink.appendChild(subTitle);
         } else {
+            const sheetTitle = document.createElement('h2');
+            sheetTitle.setAttribute('id', 'sheet-title');
             sheetTitle.textContent = this.currentData.title;
-            subTitle.textContent = '';
+            sheetLink.appendChild(sheetTitle);
         }
-        
-        sheetLink.href = `https://docs.google.com/spreadsheets/d/${this.currentData.sheetId}/edit`;
-        sheetLink.target = '_blank';
-        sheetLink.title = 'Open pod in Google Sheets';
 
         if (this.currentRowIndex >= this.allRows.length || this.currentRowIndex < 0) {
             this.showMatchTableModal();
