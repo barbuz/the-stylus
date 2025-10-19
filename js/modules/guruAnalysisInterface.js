@@ -318,8 +318,9 @@ export class GuruAnalysisInterface {
         }, '', newUrl);
 
         // Update title with current spreadsheet title
-        const sheetName = this.currentData?.title || 'Unknown Pod';
-        document.title = `${sheetName} - The Stylus`;
+        const podName = this.currentData?.metadata?.podName || this.currentData?.title || 'Unknown Pod';
+        const matchId = this.currentRowIndex === null ? '' : this.currentRowIndex+1;
+        document.title = `${podName} ${matchId}`;
     }
 
     async loadData(sheetData, guruColor = null, rowNumber = 0) {
