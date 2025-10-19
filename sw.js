@@ -1,5 +1,6 @@
 // Service Worker for The Stylus PWA
-const CACHE_NAME = 'the-stylus-v1';
+const CACHE_NAME = 'the-stylus-v20251020';
+const SCRYFALL_CACHE_NAME = 'the-stylus-scryfall-permanent';
 
 // Get the base path (works for both root and subdirectory deployments)
 const BASE_PATH = self.location.pathname.replace(/sw\.js$/, '');
@@ -55,7 +56,7 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// Activate event - clean up old caches
+// Activate event - clean up old caches (but preserve Scryfall cache)
 self.addEventListener('activate', (event) => {
   console.log('⚡ [Service Worker] Activating...');
   event.waitUntil(
@@ -63,7 +64,8 @@ self.addEventListener('activate', (event) => {
       .then((cacheNames) => {
         return Promise.all(
           cacheNames.map((cacheName) => {
-            if (cacheName !== CACHE_NAME) {
+            // Keep current app cache and permanent Scryfall cache
+            if (cacheName !== CACHE_NAME && cacheName !== SCRYFALL_CACHE_NAME) {
               console.log('[Service Worker] Deleting old cache:', cacheName);
               return caches.delete(cacheName);
             }
@@ -72,6 +74,7 @@ self.addEventListener('activate', (event) => {
       })
       .then(() => {
         console.log('✅ [Service Worker] Activation complete');
+        console.log('📦 [Service Worker] Active caches:', CACHE_NAME, SCRYFALL_CACHE_NAME);
         return self.clients.claim(); // Take control immediately
       })
   );
@@ -106,23 +109,24 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // TRUE Cache-first strategy for Scryfall images (never refetch if cached)
+  // Permanent Cache-first strategy for Scryfall images (separate permanent cache)
   if (url.hostname.includes('scryfall.com') && url.pathname.includes('/cards/')) {
     event.respondWith(
-      caches.match(request)
+      caches.match(request, { cacheName: SCRYFALL_CACHE_NAME })
         .then((cachedResponse) => {
           if (cachedResponse) {
-            console.log('🖼️ [Service Worker] Serving Scryfall image from cache:', url);
+            console.log('🖼️ [Service Worker] Serving Scryfall image from permanent cache:', url);
             return cachedResponse;
           }
           
-          // Not in cache, fetch and cache it
+          // Not in permanent cache, fetch and cache it
           console.log('📥 [Service Worker] Fetching Scryfall image:', url);
           return fetch(request)
             .then((response) => {
               if (response && response.status === 200) {
                 const responseToCache = response.clone();
-                caches.open(CACHE_NAME).then((cache) => {
+                caches.open(SCRYFALL_CACHE_NAME).then((cache) => {
+                  console.log('💾 [Service Worker] Caching Scryfall image permanently:', url);
                   cache.put(request, responseToCache);
                 });
               }
