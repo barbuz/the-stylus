@@ -1,32 +1,37 @@
 // Service Worker for The Stylus PWA
 const CACHE_NAME = 'the-stylus-v1';
+
+// Get the base path (works for both root and subdirectory deployments)
+const BASE_PATH = self.location.pathname.replace(/sw\.js$/, '');
+
 const urlsToCache = [
-  '/',
-  '/index.html',
-  '/styles/main.css',
-  '/js/main.js',
-  '/js/config.js',
-  '/js/modules/authManager.js',
-  '/js/modules/deckNotesEditor.js',
-  '/js/modules/googleSheetsAPI.js',
-  '/js/modules/guruAnalysisInterface.js',
-  '/js/modules/guruSignature.js',
-  '/js/modules/recentPods.js',
-  '/js/modules/scryfallAPI.js',
-  '/js/modules/uiController.js',
-  '/js/modules/userPreferences.js',
-  '/js/utils/constants.js',
-  '/js/utils/domUtils.js',
-  '/images/stylus-logo.png',
-  '/images/Discord-Symbol-Blurple.svg',
-  '/favicons/favicon.ico',
-  '/favicons/favicon-16x16.png',
-  '/favicons/favicon-32x32.png',
-  '/favicons/apple-touch-icon.png',
-  '/favicons/android-chrome-192x192.png',
-  '/favicons/android-chrome-512x512.png',
-  '/site.webmanifest'
+  `${BASE_PATH}`,
+  `${BASE_PATH}index.html`,
+  `${BASE_PATH}styles/main.css`,
+  `${BASE_PATH}js/main.js`,
+  `${BASE_PATH}js/config.js`,
+  `${BASE_PATH}js/modules/authManager.js`,
+  `${BASE_PATH}js/modules/deckNotesEditor.js`,
+  `${BASE_PATH}js/modules/googleSheetsAPI.js`,
+  `${BASE_PATH}js/modules/guruAnalysisInterface.js`,
+  `${BASE_PATH}js/modules/guruSignature.js`,
+  `${BASE_PATH}js/modules/recentPods.js`,
+  `${BASE_PATH}js/modules/scryfallAPI.js`,
+  `${BASE_PATH}js/modules/uiController.js`,
+  `${BASE_PATH}js/modules/userPreferences.js`,
+  `${BASE_PATH}js/utils/constants.js`,
+  `${BASE_PATH}js/utils/domUtils.js`,
+  `${BASE_PATH}images/stylus-logo.png`,
+  `${BASE_PATH}images/Discord-Symbol-Blurple.svg`,
+  `${BASE_PATH}favicons/favicon.ico`,
+  `${BASE_PATH}favicons/favicon-16x16.png`,
+  `${BASE_PATH}favicons/favicon-32x32.png`,
+  `${BASE_PATH}favicons/apple-touch-icon.png`,
+  `${BASE_PATH}favicons/android-chrome-192x192.png`,
+  `${BASE_PATH}favicons/android-chrome-512x512.png`,
+  `${BASE_PATH}site.webmanifest`
 ];
+
 
 // Install event - cache resources
 self.addEventListener('install', (event) => {
