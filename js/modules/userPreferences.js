@@ -7,7 +7,6 @@ import { CONFIG } from '../config.js';
 export class UserPreferences {
     constructor() {
         this.preferencesFileName = 'the-stylus-preferences.json';
-        this.oldPreferencesFileName = '3cb-visual-guru-preferences.json'; // For migration
         this.preferencesFileId = null;
         this.isInitialized = false;
         this.cache = null;
@@ -40,11 +39,10 @@ export class UserPreferences {
 
     /**
      * Find existing preferences file or create new one
-     * Includes migration from old filename
      */
     async findOrCreatePreferencesFile() {
         try {
-            // First, search for new filename
+            // Search for preferences file
             const response = await gapi.client.drive.files.list({
                 q: `name='${this.preferencesFileName}' and parents in 'appDataFolder' and trashed=false`,
                 spaces: 'appDataFolder'
@@ -56,28 +54,7 @@ export class UserPreferences {
                 return;
             }
 
-            // If not found, check for old filename and migrate
-            console.log('🔍 Checking for old preferences file to migrate...');
-            const oldResponse = await gapi.client.drive.files.list({
-                q: `name='${this.oldPreferencesFileName}' and parents in 'appDataFolder' and trashed=false`,
-                spaces: 'appDataFolder'
-            });
-
-            if (oldResponse.result.files && oldResponse.result.files.length > 0) {
-                const oldFileId = oldResponse.result.files[0].id;
-                console.log('📦 Found old preferences file, migrating data...');
-                
-                // Load data from old file
-                const oldData = await this.loadPreferencesFromFile(oldFileId);
-                
-                // Create new file with the old data
-                await this.createPreferencesFile(oldData);
-                
-                console.log('✅ Successfully migrated preferences from old file');
-                return;
-            }
-
-            // No old or new file found, create new one
+            // No file found, create new one
             await this.createPreferencesFile();
         } catch (error) {
             console.error('Error finding/creating preferences file:', error);
@@ -87,21 +64,15 @@ export class UserPreferences {
 
     /**
      * Create new preferences file in Google appData
-     * @param {Object} initialData - Optional initial data (for migration)
      */
-    async createPreferencesFile(initialData = null) {
+    async createPreferencesFile() {
         try {
-            const defaultPreferences = initialData || {
+            const defaultPreferences = {
                 guruSignature: '',
                 recentPods: [],
                 version: '1.0.0',
                 lastUpdated: new Date().toISOString()
             };
-
-            // Ensure we have the required structure even if migrating
-            if (initialData) {
-                defaultPreferences.lastUpdated = new Date().toISOString();
-            }
 
             const fileMetadata = {
                 name: this.preferencesFileName,
@@ -161,13 +132,16 @@ export class UserPreferences {
 
             const preferences = JSON.parse(response.body);
             
-            console.log('📥 Loaded preferences from file:', {
+            console.log('📥 Loaded preferences from appData:', {
                 guruSignature: preferences.guruSignature,
                 recentPodsCount: preferences.recentPods?.length || 0,
                 lastUpdated: preferences.lastUpdated
             });
 
             this.cache = preferences;
+            
+            // Also save to localStorage for faster subsequent loads
+            this.saveToLocalStorage(preferences);
             
             return preferences;
         } catch (error) {
@@ -178,12 +152,37 @@ export class UserPreferences {
 
     /**
      * Load preferences from Google appData
+     * Uses stale-while-revalidate: returns cached data immediately, 
+     * then fetches fresh data in background
      */
     async loadPreferences() {
         if (!this.preferencesFileId) {
             throw new Error('No preferences file ID available');
         }
 
+        // If we have cached data, return it immediately
+        const cachedData = this.loadFromLocalStorage();
+        if (cachedData) {
+            console.log('⚡ Returning cached preferences (revalidating in background)');
+            this.cache = cachedData;
+            
+            // Fetch fresh data in background
+            this.loadPreferencesFromFile(this.preferencesFileId)
+                .then(freshData => {
+                    // Update cache silently
+                    this.cache = freshData;
+                    this.saveToLocalStorage(freshData);
+                    console.log('🔄 Background refresh of preferences file complete');
+                })
+                .catch(error => {
+                    console.warn('Background refresh of preferences file failed, keeping cached data:', error);
+                });
+            
+            return cachedData;
+        }
+
+        // No cache, fetch normally
+        console.log('📥 Loading preferences from appData');
         return await this.loadPreferencesFromFile(this.preferencesFileId);
     }
 
@@ -191,6 +190,8 @@ export class UserPreferences {
      * Save preferences to Google appData
      */
     async savePreferences(preferences) {
+        // Save to local storage first
+        this.saveToLocalStorage(preferences);
         if (!this.preferencesFileId) {
             throw new Error('No preferences file ID available');
         }
@@ -217,8 +218,6 @@ export class UserPreferences {
             return response;
         } catch (error) {
             console.error('Error saving preferences to appData:', error);
-            // Fall back to localStorage
-            this.saveToLocalStorage(preferences);
             throw error;
         }
     }
@@ -325,12 +324,14 @@ export class UserPreferences {
         const recentPodsStr = localStorage.getItem(CONFIG.STORAGE_KEYS.RECENT_PODS);
         const recentPods = recentPodsStr ? JSON.parse(recentPodsStr) : [];
 
-        return {
+        const preferences = {
             guruSignature,
             recentPods,
             version: '1.0.0',
             lastUpdated: new Date().toISOString()
         };
+        console.log('📥 Loaded preferences from localStorage:', preferences);
+        return preferences;
     }
 
     /**

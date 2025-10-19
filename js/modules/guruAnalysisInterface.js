@@ -1056,8 +1056,8 @@ export class GuruAnalysisInterface {
         await cards1Loaded;
         await cards2Loaded;
 
-        // Preload next match's card images in the background
-        this.preloadNextMatchCards();
+        // Preload card images for adjacent matches in the background
+        this.preloadCardImages();
     }
 
     /**
@@ -1140,41 +1140,53 @@ export class GuruAnalysisInterface {
     }
 
     /**
-     * Preload card images for the next match that will be evaluated
+     * Preload card images for adjacent matches and the next empty analysis
      * This improves user experience by having images ready when user navigates
      */
-    preloadNextMatchCards() {
-        // Find the next row that actually needs analysis (empty analysis or discrepancy)
-        // starting from after the current row
-        let nextRowIndex = this.findFirstEmptyAnalysis(this.currentRowIndex + 1);
-        
-        // If findFirstEmptyAnalysis returned null, it means there are no more rows to analyse, so don't preload
-        if (nextRowIndex == null) {
-            console.log('🎯 No next match to preload (analysis complete)');
-            return;
-        }
-        
-        const nextRow = this.allRows[nextRowIndex];
-        
-        // Combine both players' deck strings for preloading
+    preloadCardImages() {
         const decksToPreload = [];
+        const rowsToPreload = new Set();
         
-        if (nextRow.player1 && nextRow.player1.trim()) {
-            decksToPreload.push(nextRow.player1.trim());
+        // 1. Preload next empty analysis starting from after current row
+        const nextEmptyIndex = this.findFirstEmptyAnalysis(this.currentRowIndex + 1);
+        if (nextEmptyIndex != null) {
+            rowsToPreload.add(nextEmptyIndex);
+        }
+
+        // 2. Preload next match (currentRowIndex + 1)
+        const nextRowIndex = this.currentRowIndex + 1;
+        if (nextRowIndex >= 0 && nextRowIndex < this.allRows.length) {
+            rowsToPreload.add(nextRowIndex);
         }
         
-        if (nextRow.player2 && nextRow.player2.trim()) {
-            decksToPreload.push(nextRow.player2.trim());
+        // 3. Preload previous match (currentRowIndex - 1)
+        const prevRowIndex = this.currentRowIndex - 1;
+        if (prevRowIndex >= 0 && prevRowIndex < this.allRows.length) {
+            rowsToPreload.add(prevRowIndex);
         }
+        
+        
+        // Collect all decks from the rows we want to preload
+        rowsToPreload.forEach(rowIndex => {
+            const row = this.allRows[rowIndex];
+            if (row) {
+                if (row.player1 && row.player1.trim()) {
+                    decksToPreload.push(row.player1.trim());
+                }
+                if (row.player2 && row.player2.trim()) {
+                    decksToPreload.push(row.player2.trim());
+                }
+            }
+        });
         
         if (decksToPreload.length > 0) {
             // Start preloading in the background with slower pace to not interfere
             this.scryfallAPI.preloadCards(decksToPreload, {
                 delay: 300,  // Slower preloading to be less aggressive
-                silent: false // Don't spam console logs
+                silent: true // Don't spam console logs
             });
             
-            console.log(`🔄 Started preloading cards for next evaluation target (row ${nextRowIndex + 1}): ${nextRow.player1} vs ${nextRow.player2}`);
+            console.log(`🔄 Started preloading cards for ${rowsToPreload.size} matches (rows: ${Array.from(rowsToPreload).map(i => i + 1).join(', ')})`);
         }
     }
 
@@ -2251,8 +2263,6 @@ export class GuruAnalysisInterface {
         deckInfoDiv.querySelectorAll('.edit-deck-info-btn').forEach(btn => {
             btn.addEventListener('click', handleEditClick);
         });
-
-        console.log('Deck info displayed successfully');
     }
 
     // --- MATCH TABLE MODAL ---

@@ -30,27 +30,34 @@ export class GoogleSheetsAPI {
 
             console.log(`Processing sheets: ${sheetsToProcess.map(s => s.title).join(', ')}`);
 
-            const allSheetsData = [];
-
-            // Process Deck Notes sheet separately
+            // Separate Deck Notes and Guru sheets
             const deckNotesSheet = sheetsToProcess.find(sheet => 
                 sheet.title.toLowerCase().includes('deck notes')
             );
             
-            if (deckNotesSheet) {
-                const deckNotesData = await this.getDeckNotes(sheetId, deckNotesSheet);
-                allSheetsData.push(deckNotesData);
-            }
-
-            // Process and merge guru sheets
             const guruSheets = sheetsToProcess.filter(sheet => 
                 !sheet.title.toLowerCase().includes('deck notes')
             );
 
+            // Process both in parallel
+            const sheetPromises = [];
+            
+            if (deckNotesSheet) {
+                sheetPromises.push(this.getDeckNotes(sheetId, deckNotesSheet));
+            }
+            
             if (guruSheets.length > 0) {
-                const mergedGuruSheet = await this.mergeGuruSheets(sheetId, guruSheets);
-                allSheetsData.push(mergedGuruSheet);
-                console.log("Merged Guru Sheets:", mergedGuruSheet);
+                sheetPromises.push(this.mergeGuruSheets(sheetId, guruSheets));
+            }
+
+            // Wait for all sheet processing to complete
+            const allSheetsData = await Promise.all(sheetPromises);
+            
+            if (guruSheets.length > 0) {
+                const mergedGuruSheet = allSheetsData.find(sheet => sheet.title === 'Merged Gurus');
+                if (mergedGuruSheet) {
+                    console.log("Merged Guru Sheets:", mergedGuruSheet);
+                }
             }
 
             // Wait for custom metadata to finish loading

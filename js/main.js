@@ -160,6 +160,8 @@ class ThreeCardBlindGuruTool {
     clearLocalPreferences() {
         // Clear local storage
         localStorage.removeItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE);
+        localStorage.removeItem(CONFIG.STORAGE_KEYS.RECENT_PODS);
+        console.log('🗑️ Cleared local preferences from localStorage');
     }
 
     setupGuruSignatureHandlers() {
