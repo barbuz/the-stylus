@@ -91,8 +91,16 @@ export class GuruAnalysisInterface {
             currentSignature
         });
 
+        // Start searching from current row index if available, otherwise start from row 1
+        const startRowIndex = (this.currentRowIndex !== undefined && this.currentRowIndex >= 0) 
+            ? this.currentRowIndex + 1  // +1 because currentRowIndex is 0-based, but row indices here start at 1
+            : 1;
+        const totalRows = mergedGuruSheet.values.length;
+
         // Check each signature column for the current guru's signature
-        for (let rowIndex = 1; rowIndex < mergedGuruSheet.values.length; rowIndex++) {
+        // Start from current row, go to end, then loop back from beginning to current
+        for (let i = 0; i < totalRows - 1; i++) {
+            const rowIndex = ((startRowIndex - 1 + i) % (totalRows - 1)) + 1; // -1 and +1 to handle header row
             const row = mergedGuruSheet.values[rowIndex];
             
             // Check red signature column
@@ -136,6 +144,22 @@ export class GuruAnalysisInterface {
 
         // --- MATCH TABLE MODAL ---
         document.getElementById('current-row-info').addEventListener('click', () => this.showMatchTableModal());
+        
+        // --- CREATE THREAD TEXT MODAL ---
+        // Use event delegation since button is dynamically created
+        document.addEventListener('click', (e) => {
+            if (e.target.closest('.create-thread-btn')) {
+                const btn = e.target.closest('.create-thread-btn');
+                const rowIndex = parseInt(btn.dataset.rowIndex);
+                this.showCreateThreadModal(rowIndex);
+            }
+            if (e.target.closest('.close-thread-modal')) {
+                this.closeCreateThreadModal();
+            }
+            if (e.target.classList.contains('thread-modal-overlay')) {
+                this.closeCreateThreadModal();
+            }
+        });
     }
 
     handleResize() {
@@ -1726,23 +1750,35 @@ export class GuruAnalysisInterface {
         
         html += '</ul>';
         
-        // If current guru has an evaluation and hub is available, try to get the Discord thread link
-        if (currentGuruAnalysis && currentGuruAnalysis.trim() !== '' && this.hub) {
-            try {
-                // Get the row index (ID#) to lookup the thread
-                const rowId = currentRow.rowIndex || this.currentRowIndex + 1;
-                const threadUrl = await this.hub.getThreadById(rowId);
-                
-                if (threadUrl) {
-                    html += `<div class="thread-link" style="margin-top: 8px; font-size: 0.85em;">
-                        <a href="${threadUrl}" target="_blank" rel="noopener noreferrer" style="color: #5865F2; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
-                            <img src="images/Discord-Symbol-Blurple.svg" alt="Discord" style="width: 16px; height: 16px;" />
-                            Guru match help post
-                        </a>
-                    </div>`;
+        // If current guru has an evaluation, show Discord thread link or create button
+        if (currentGuruAnalysis && currentGuruAnalysis.trim() !== '') {
+            let threadUrl = null;
+            
+            // Try to get thread URL if hub is available
+            if (this.hub) {
+                try {
+                    const rowId = currentRow.rowIndex || this.currentRowIndex + 1;
+                    threadUrl = await this.hub.getThreadById(rowId);
+                } catch (error) {
+                    console.warn('Failed to fetch thread link:', error);
                 }
-            } catch (error) {
-                console.warn('Failed to fetch thread link:', error);
+            }
+            
+            if (threadUrl) {
+                // Show Discord thread link
+                html += `<div class="thread-link" style="margin-top: 8px; font-size: 0.85em;">
+                    <a href="${threadUrl}" target="_blank" rel="noopener noreferrer" style="color: #5865F2; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+                        <img src="images/Discord-Symbol-Blurple.svg" alt="Discord" style="width: 16px; height: 16px;" />
+                        Guru match help post
+                    </a>
+                </div>`;
+            } else {
+                // Show button to create thread text
+                html += `<div class="thread-create-btn-container" style="margin-top: 8px; font-size: 0.85em;">
+                    <button class="create-thread-btn" data-row-index="${this.currentRowIndex}">
+                        Create Guru Match Help post
+                    </button>
+                </div>`;
             }
         }
         
@@ -2291,6 +2327,176 @@ export class GuruAnalysisInterface {
 
     closeMatchTableModal() {
         const existing = document.querySelector('.match-table-overlay');
+        if (existing) existing.remove();
+    }
+
+    /**
+     * Formats a deck string into card names with Scryfall links separated by pipes
+     * @param {string} deckString - The deck string (e.g., "Card1 / Card2 / Card3")
+     * @returns {string} - Formatted as "Card1 [↗](link) | Card2 [↗](link) | Card3 [↗](link)"
+     */
+    formatDeckForThread(deckString) {
+        if (!deckString || !deckString.trim()) {
+            return '';
+        }
+        
+        // Parse the deck string using the same method as ScryfallAPI
+        const cardNames = this.scryfallAPI.parseDeckString(deckString);
+        
+        // Join with pipes
+        return cardNames.join(' | ');
+    }
+
+    /**
+     * Shows modal with Discord thread text for the current match
+     * @param {number} rowIndex - Index of the row to create thread text for
+     */
+    showCreateThreadModal(rowIndex) {
+        if (rowIndex < 0 || rowIndex >= this.allRows.length) {
+            console.warn('Invalid row index for thread creation');
+            return;
+        }
+        
+        const currentRow = this.allRows[rowIndex];
+        const podName = this.currentData.metadata?.podName || 'Pod';
+        const matchNumber = rowIndex + 1;
+        
+        // Format the thread text
+        const p1Cards = this.formatDeckForThread(currentRow.player1);
+        const p2Cards = this.formatDeckForThread(currentRow.player2);
+        
+        // Generate link to this match (without guru color parameter)
+        const url = new URL(window.location.href);
+        url.searchParams.delete('guru'); // Remove guru color from URL
+        const matchLink = url.toString();
+        
+        // Build correction string (e.g., "W/T->L")
+        const buildCorrectionString = () => {
+            const currentAnalysis = this.getCurrentGuruAnalysis(currentRow);
+            if (!currentAnalysis || currentAnalysis.trim() === '') {
+                return '';
+            }
+            
+            // Get all analyses
+            const allAnalyses = [
+                currentRow.redAnalysis,
+                currentRow.blueAnalysis,
+                currentRow.greenAnalysis
+            ].filter(a => a && a.trim() !== ''); // Remove empty analyses
+            
+            // Get current guru analysis value
+            const currentValue = parseFloat(currentAnalysis);
+            
+            // Filter out analyses equal to current guru's analysis
+            const differentAnalyses = allAnalyses.filter(a => parseFloat(a) !== currentValue);
+            
+            // If all other analyses are the same as current, no correction needed
+            if (differentAnalyses.length === 0) {
+                return '';
+            }
+            
+            // Convert analysis values to letters (W/T/L)
+            const analysisToLetter = (value) => {
+                const numValue = parseFloat(value);
+                if (numValue === 1.0) return 'W';
+                if (numValue === 0.5) return 'T';
+                if (numValue === 0.0) return 'L';
+                return '?';
+            };
+            
+            // Build the correction string
+            const otherLetters = differentAnalyses.map(analysisToLetter).join('/');
+            const currentLetter = analysisToLetter(currentAnalysis);
+            
+            return `\n\n${otherLetters}->${currentLetter}`;
+        };
+        
+        const correctionString = buildCorrectionString();
+        const threadText = `P1 - ${p1Cards}\nP2 - ${p2Cards}\n[See match on The Stylus](${matchLink}) :Stylus:${correctionString}\n`;
+        
+        // Calculate number of rows needed for textarea (count newlines + 1)
+        const textareaRows = (threadText.match(/\n/g) || []).length + 1;
+        
+        // Create modal overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'thread-modal-overlay';
+        
+        // Create modal
+        const modal = document.createElement('div');
+        modal.className = 'thread-modal';
+        const titleText = `${podName} ${matchNumber}`;
+        const writeupCommand = `/writeup matchid:${podName} ${matchNumber}`;
+        modal.innerHTML = `
+            <div class="thread-modal-header">
+                <h3>${titleText}</h3>
+                <button class="copy-btn-icon copy-title-btn" title="Copy title to Clipboard">📋</button>
+                <button class="close-thread-modal" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #666;">&times;</button>
+            </div>
+            <div class="thread-modal-content">
+                <p style="margin-bottom: 10px; color: #666; display: flex; align-items: center; justify-content: space-between;">
+                    <span>Copy this text to create a <a href="https://discord.com/channels/1051702336113889330/1145460704724398181" target="_blank" style="display: inline-flex; align-items: center; gap: 4px;"><img src="images/Discord-Symbol-Blurple.svg" alt="Discord" style="width: 16px; height: 16px; vertical-align: middle;" />Guru Match Help post</a> for this match:</span>
+                    <button class="copy-btn-icon copy-thread-btn" title="Copy to Clipboard">📋</button>
+                </p>
+                <textarea readonly class="thread-text-area" rows="${textareaRows}" style="width: 100%; font-family: monospace; padding: 12px; border: 1px solid #ddd; border-radius: 4px; resize: none;">${threadText}</textarea>
+                <p style="margin-top: 16px; margin-bottom: 10px; color: #666; display: flex; align-items: center; justify-content: space-between;">
+                    <span>Then run this command in the thread:</span>
+                    <button class="copy-btn-icon copy-writeup-btn" title="Copy command to Clipboard">📋</button>
+                </p>
+                <div style="font-family: monospace; padding: 12px; border: 1px solid #ddd; border-radius: 4px; background-color: #f5f5f5;">${writeupCommand}</div>
+            </div>
+        `;
+        
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+        
+        // Auto-select text in textarea
+        const textarea = modal.querySelector('.thread-text-area');
+        textarea.select();
+        
+        // Shared copy button handler
+        const setupCopyButton = (button, textToCopy, defaultTitle) => {
+            button.addEventListener('click', () => {
+                if (button.classList.contains('copy-thread-btn')) {
+                    textarea.select();
+                }
+                navigator.clipboard.writeText(textToCopy).then(() => {
+                    button.textContent = '✓';
+                    button.style.color = '#28a745';
+                    button.title = 'Copied!';
+                    setTimeout(() => {
+                        button.textContent = '📋';
+                        button.style.color = '#5865F2';
+                        button.title = defaultTitle;
+                    }, 2000);
+                }).catch(err => {
+                    console.error('Failed to copy:', err);
+                    button.textContent = '✗';
+                    button.style.color = '#dc3545';
+                    button.title = 'Failed to copy';
+                });
+            });
+        };
+        
+        // Setup copy buttons
+        setupCopyButton(modal.querySelector('.copy-title-btn'), titleText, 'Copy title to Clipboard');
+        setupCopyButton(modal.querySelector('.copy-thread-btn'), threadText, 'Copy to Clipboard');
+        setupCopyButton(modal.querySelector('.copy-writeup-btn'), writeupCommand, 'Copy command to Clipboard');
+        
+        // Close on escape key
+        const escapeHandler = (e) => {
+            if (e.key === 'Escape') {
+                this.closeCreateThreadModal();
+                document.removeEventListener('keydown', escapeHandler);
+            }
+        };
+        document.addEventListener('keydown', escapeHandler);
+    }
+
+    /**
+     * Closes the create thread modal
+     */
+    closeCreateThreadModal() {
+        const existing = document.querySelector('.thread-modal-overlay');
         if (existing) existing.remove();
     }
 }
