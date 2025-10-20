@@ -55,6 +55,8 @@ export class RecentPodsManager {
 
     /**
      * Save recent pods to localStorage or Google Drive
+     * Always saves to localStorage first for instant response,
+     * then saves to Google appData in background
      */
     async saveRecentPods() {
         try { 
@@ -66,19 +68,30 @@ export class RecentPodsManager {
                 this.recentPods = this.recentPods.slice(0, this.maxRecentPods);
             }
             
+            // Always save to localStorage first for instant response
+            localStorage.setItem(CONFIG.STORAGE_KEYS.RECENT_PODS, JSON.stringify(this.recentPods));
+            console.log('💾 Saved recent pods to localStorage:', this.recentPods.length, 'pods');
+            
+            // Then save to Google appData in background if available
             if (this.userPreferences && this.userPreferences.isInitialized) {
-                // Save to Google appData
-                await this.userPreferences.setRecentPods(this.recentPods);
-                console.log('💾 Saved recent pods to Google appData:', this.recentPods.length, 'pods');
-            } else {
-                // Fall back to localStorage
-                localStorage.setItem(CONFIG.STORAGE_KEYS.RECENT_PODS, JSON.stringify(this.recentPods));
-                console.log('💾 Saved recent pods to localStorage:', this.recentPods.length, 'pods');
+                // Don't await - let this happen in background
+                this.userPreferences.setRecentPods(this.recentPods)
+                    .then(() => {
+                        console.log('☁️ Synced recent pods to Google appData in background');
+                    })
+                    .catch((error) => {
+                        console.warn('Failed to sync recent pods to Google appData:', error);
+                        // localStorage already has the data, so this is not critical
+                    });
             }
         } catch (error) {
             console.error('Error saving recent pods:', error);
-            // Always try to save to localStorage as backup
-            localStorage.setItem(CONFIG.STORAGE_KEYS.RECENT_PODS, JSON.stringify(this.recentPods));
+            // Try localStorage as last resort
+            try {
+                localStorage.setItem(CONFIG.STORAGE_KEYS.RECENT_PODS, JSON.stringify(this.recentPods));
+            } catch (e) {
+                console.error('Failed to save to localStorage:', e);
+            }
         }
     }
 
