@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#3498db">
     
     <!-- iOS specific meta tags -->
-    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="The Stylus">
     
@@ -28,6 +28,16 @@
     <script src="https://accounts.google.com/gsi/client"></script>
 </head>
 <body>
+    <!-- Update Banner (hidden by default) -->
+    <div id="update-banner" class="update-banner" style="display: none;">
+        <div class="update-banner-content">
+            <span class="update-banner-icon">🔄</span>
+            <span class="update-banner-message">A new version is available!</span>
+            <button id="reload-btn" class="update-banner-btn">Reload</button>
+            <button id="dismiss-update-btn" class="update-banner-dismiss">✕</button>
+        </div>
+    </div>
+
     <div class="container">
         <header>
             <div class="header-content">
@@ -216,6 +226,12 @@
                 </section>
             </div>
         </main>
+        
+        <footer class="app-footer">
+            <div class="footer-content">
+                <span class="app-version" id="app-version">Loading version...</span>
+            </div>
+        </footer>
     </div>
 
     <script type="module" src="js/main.js"></script>

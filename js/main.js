@@ -367,14 +367,38 @@ class ThreeCardBlindGuruTool {
 document.addEventListener('DOMContentLoaded', () => {
     new ThreeCardBlindGuruTool();
     
+    // Display app version
+    displayAppVersion();
+    
     // Register service worker for PWA functionality
     if ('serviceWorker' in navigator) {
+        // Listen for the controlling service worker changing (global listener)
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+            console.log('🔄 Service worker controller changed, reloading...');
+            window.location.reload();
+        });
+        
         window.addEventListener('load', () => {
             // Use relative path for GitHub Pages subdirectory deployment
             const swPath = new URL('sw.js', window.location.href).pathname;
+            console.log('Registering service worker at:', swPath);
             navigator.serviceWorker.register(swPath)
                 .then((registration) => {
                     console.log('✅ Service Worker registered successfully:', registration.scope);
+                    
+                    // Listen for service worker updates
+                    registration.addEventListener('updatefound', () => {
+                        const newWorker = registration.installing;
+                        console.log('🔄 New service worker found, installing...');
+                        
+                        newWorker.addEventListener('statechange', () => {
+                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                // New service worker is installed and waiting
+                                console.log('✨ New version available! Showing update banner...');
+                                showUpdateBanner(newWorker);
+                            }
+                        });
+                    });
                     
                     // Check for updates periodically
                     setInterval(() => {
@@ -385,5 +409,75 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.error('❌ Service Worker registration failed:', error);
                 });
         });
+        console.log('Service Worker is supported in this browser.');
     }
 });
+
+/**
+ * Show update banner when new version is available
+ */
+function showUpdateBanner(newWorker) {
+    const banner = document.getElementById('update-banner');
+    const reloadBtn = document.getElementById('reload-btn');
+    const dismissBtn = document.getElementById('dismiss-update-btn');
+    
+    if (!banner || !reloadBtn || !dismissBtn) {
+        console.error('Update banner elements not found');
+        return;
+    }
+    
+    // Show the banner
+    banner.style.display = 'block';
+    document.body.classList.add('update-banner-visible');
+    
+    // Remove existing listeners to prevent duplicates
+    const newReloadBtn = reloadBtn.cloneNode(true);
+    reloadBtn.parentNode.replaceChild(newReloadBtn, reloadBtn);
+    const newDismissBtn = dismissBtn.cloneNode(true);
+    dismissBtn.parentNode.replaceChild(newDismissBtn, dismissBtn);
+    
+    // Reload button handler
+    newReloadBtn.addEventListener('click', () => {
+        console.log('🔄 User initiated reload for update');
+        newWorker.postMessage({ type: 'SKIP_WAITING' });
+        // The controllerchange listener will handle the actual reload
+    });
+    
+    // Dismiss button handler
+    newDismissBtn.addEventListener('click', () => {
+        console.log('❌ User dismissed update banner');
+        banner.style.display = 'none';
+        document.body.classList.remove('update-banner-visible');
+    });
+}
+
+/**
+ * Display the app version from the service worker
+ */
+async function displayAppVersion() {
+    const versionElement = document.getElementById('app-version');
+    
+    if (!versionElement) {
+        return;
+    }
+    
+    try {
+        // Fetch the service worker file to extract version
+        const swResponse = await fetch('sw.js');
+        const swText = await swResponse.text();
+        
+        // Extract version from APP_VERSION constant (simple and targeted)
+        const match = swText.match(/const APP_VERSION\s*=\s*['"]([^'"]+)['"]/);
+        
+        if (match && match[1]) {
+            const version = match[1];
+            versionElement.textContent = `Version: ${version}`;
+            console.log('📦 App version:', version);
+        } else {
+            versionElement.textContent = 'Version: unknown';
+        }
+    } catch (error) {
+        console.error('Error getting app version:', error);
+        versionElement.textContent = 'Version: error';
+    }
+}

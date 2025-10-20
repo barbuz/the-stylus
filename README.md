@@ -65,3 +65,12 @@ This is an open-source project. Contributions are welcome!
    ```bash
    python -m http.server 8000
    ```
+
+### Version Management
+
+The app version is managed in `sw.js` at the top of the file. When making changes that should trigger a service worker update:
+
+1. Update the `APP_VERSION` constant in `sw.js`
+2. This changes the service worker file, causing the browser to detect a new version
+3. The version is fetched and parsed by `main.js` and displayed in the app footer
+4. Users will see an update banner prompting them to reload

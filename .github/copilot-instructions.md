@@ -50,7 +50,9 @@ Before scoring a match the guru must claim it by entering their guru signature. 
 │   │   └── userPreferences.js
 │   └── utils/               # Utility functions
 │       ├── constants.js
-│       └── domUtils.js
+│       ├── domUtils.js
+│       ├── podUtils.js
+│       └── urlUtils.js
 └── styles/
     └── main.css            # All application styles
 ```
@@ -62,6 +64,7 @@ Before scoring a match the guru must claim it by entering their guru signature. 
 - **js/modules/**: Core functionality modules using ES6 classes
 - **js/utils/**: Shared utility functions and constants
 - **styles/main.css**: All CSS styling for the application
+- **sw.js**: Service worker for PWA functionality and offline support (defines APP_VERSION at top)
 
 ### Development Environment
 - **Required tools**: Node.js v20.19.4, modern web browser

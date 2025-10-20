@@ -1,5 +1,10 @@
 // Service Worker for The Stylus PWA
-const CACHE_NAME = 'the-stylus-v20251020';
+
+// Version configuration - UPDATE THIS to trigger a service worker update
+const APP_VERSION = 'v20251020-1';
+const APP_NAME = 'the-stylus';
+const CACHE_NAME = `${APP_NAME}-${APP_VERSION}`;
+
 const SCRYFALL_CACHE_NAME = 'the-stylus-scryfall-permanent';
 
 // Get the base path (works for both root and subdirectory deployments)
@@ -16,12 +21,15 @@ const urlsToCache = [
   `${BASE_PATH}js/modules/googleSheetsAPI.js`,
   `${BASE_PATH}js/modules/guruAnalysisInterface.js`,
   `${BASE_PATH}js/modules/guruSignature.js`,
+  `${BASE_PATH}js/modules/hubManager.js`,
   `${BASE_PATH}js/modules/recentPods.js`,
   `${BASE_PATH}js/modules/scryfallAPI.js`,
   `${BASE_PATH}js/modules/uiController.js`,
   `${BASE_PATH}js/modules/userPreferences.js`,
   `${BASE_PATH}js/utils/constants.js`,
   `${BASE_PATH}js/utils/domUtils.js`,
+  `${BASE_PATH}js/utils/podUtils.js`,
+  `${BASE_PATH}js/utils/urlUtils.js`,
   `${BASE_PATH}images/stylus-logo.png`,
   `${BASE_PATH}images/Discord-Symbol-Blurple.svg`,
   `${BASE_PATH}favicons/favicon.ico`,
@@ -46,8 +54,8 @@ self.addEventListener('install', (event) => {
         return cache.addAll(urlsToCache);
       })
       .then(() => {
-        console.log('✅ [Service Worker] Installation complete');
-        return self.skipWaiting(); // Activate immediately
+        console.log('✅ [Service Worker] Installation complete - waiting for user action');
+        // Don't call skipWaiting() here - let the user decide when to update
       })
       .catch((error) => {
         console.error('❌ [Service Worker] Installation failed:', error);
@@ -75,7 +83,8 @@ self.addEventListener('activate', (event) => {
       .then(() => {
         console.log('✅ [Service Worker] Activation complete');
         console.log('📦 [Service Worker] Active caches:', CACHE_NAME, SCRYFALL_CACHE_NAME);
-        return self.clients.claim(); // Take control immediately
+        // clients.claim() will be called after user clicks reload
+        // This ensures controlled activation
       })
   );
 });

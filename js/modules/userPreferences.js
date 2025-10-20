@@ -318,15 +318,21 @@ export class UserPreferences {
 
     /**
      * Load preferences from localStorage (fallback)
+     * Returns null if no data is found in localStorage
      */
     loadFromLocalStorage() {
-        const guruSignature = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE) || '';
+        const guruSignature = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE);
         const recentPodsStr = localStorage.getItem(CONFIG.STORAGE_KEYS.RECENT_PODS);
-        const recentPods = recentPodsStr ? JSON.parse(recentPodsStr) : [];
+        
+        // Return null if no data exists in localStorage
+        if (!guruSignature && !recentPodsStr) {
+            console.log('📭 No cached preferences in localStorage');
+            return null;
+        }
 
         const preferences = {
-            guruSignature,
-            recentPods,
+            guruSignature: guruSignature || '',
+            recentPods: recentPodsStr ? JSON.parse(recentPodsStr) : [],
             version: '1.0.0',
             lastUpdated: new Date().toISOString()
         };
