@@ -335,8 +335,6 @@ export class AuthManager {
                     console.log('❌ Automatic re-authentication failed, clearing stored auth');
                     this.clearStoredAuth();
                     
-                    // Show login screen when auto re-auth fails
-                    this.showLoginScreen();
                     return false;
                 } else {
                     // Set up automatic silent re-auth timer

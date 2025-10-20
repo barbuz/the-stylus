@@ -32,9 +32,6 @@ class ThreeCardBlindGuruTool {
             // Set up event listeners first, before any authentication
             this.setupPreferencesHandlers();
             
-            // Initialize Google API first
-            await this.authManager.initialize();
-            
             // Check authentication status
             const isAuthenticated = await this.authManager.checkAuthStatus();
             
