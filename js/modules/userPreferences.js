@@ -70,6 +70,7 @@ export class UserPreferences {
             const defaultPreferences = {
                 guruSignature: '',
                 recentPods: [],
+                recentHubs: [],
                 version: '1.0.0',
                 lastUpdated: new Date().toISOString()
             };
@@ -135,6 +136,7 @@ export class UserPreferences {
             console.log('📥 Loaded preferences from appData:', {
                 guruSignature: preferences.guruSignature,
                 recentPodsCount: preferences.recentPods?.length || 0,
+                recentHubsCount: preferences.recentHubs?.length || 0,
                 lastUpdated: preferences.lastUpdated
             });
 
@@ -317,15 +319,63 @@ export class UserPreferences {
     }
 
     /**
+     * Get recent hubs
+     */
+    async getRecentHubs() {
+        if (!this.isInitialized) {
+            const stored = localStorage.getItem(CONFIG.STORAGE_KEYS.RECENT_HUBS);
+            return stored ? JSON.parse(stored) : [];
+        }
+
+        try {
+            if (!this.cache) {
+                await this.loadPreferences();
+            }
+            return this.cache.recentHubs || [];
+        } catch (error) {
+            console.error('Error getting recent hubs from appData:', error);
+            const stored = localStorage.getItem(CONFIG.STORAGE_KEYS.RECENT_HUBS);
+            return stored ? JSON.parse(stored) : [];
+        }
+    }
+
+    /**
+     * Set recent hubs
+     */
+    async setRecentHubs(hubs) {
+        if (!this.isInitialized) {
+            localStorage.setItem(CONFIG.STORAGE_KEYS.RECENT_HUBS, JSON.stringify(hubs));
+            return;
+        }
+
+        try {
+            if (!this.cache) {
+                await this.loadPreferences();
+            }
+
+            this.cache.recentHubs = hubs;
+            await this.savePreferences(this.cache);
+            
+            // Also update localStorage as backup
+            localStorage.setItem(CONFIG.STORAGE_KEYS.RECENT_HUBS, JSON.stringify(hubs));
+        } catch (error) {
+            console.error('Error setting recent hubs in appData:', error);
+            // Fall back to localStorage
+            localStorage.setItem(CONFIG.STORAGE_KEYS.RECENT_HUBS, JSON.stringify(hubs));
+        }
+    }
+
+    /**
      * Load preferences from localStorage (fallback)
      * Returns null if no data is found in localStorage
      */
     loadFromLocalStorage() {
         const guruSignature = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE);
         const recentPodsStr = localStorage.getItem(CONFIG.STORAGE_KEYS.RECENT_PODS);
+        const recentHubsStr = localStorage.getItem(CONFIG.STORAGE_KEYS.RECENT_HUBS);
         
         // Return null if no data exists in localStorage
-        if (!guruSignature && !recentPodsStr) {
+        if (!guruSignature && !recentPodsStr && !recentHubsStr) {
             console.log('📭 No cached preferences in localStorage');
             return null;
         }
@@ -333,6 +383,7 @@ export class UserPreferences {
         const preferences = {
             guruSignature: guruSignature || '',
             recentPods: recentPodsStr ? JSON.parse(recentPodsStr) : [],
+            recentHubs: recentHubsStr ? JSON.parse(recentHubsStr) : [],
             version: '1.0.0',
             lastUpdated: new Date().toISOString()
         };
@@ -350,6 +401,9 @@ export class UserPreferences {
         if (preferences.recentPods) {
             localStorage.setItem(CONFIG.STORAGE_KEYS.RECENT_PODS, JSON.stringify(preferences.recentPods));
         }
+        if (preferences.recentHubs) {
+            localStorage.setItem(CONFIG.STORAGE_KEYS.RECENT_HUBS, JSON.stringify(preferences.recentHubs));
+        }
     }
 
     /**
@@ -362,6 +416,7 @@ export class UserPreferences {
                 const emptyPreferences = {
                     guruSignature: '',
                     recentPods: [],
+                    recentHubs: [],
                     version: '1.0.0',
                     lastUpdated: new Date().toISOString()
                 };
@@ -375,6 +430,7 @@ export class UserPreferences {
         // Clear localStorage
         localStorage.removeItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE);
         localStorage.removeItem(CONFIG.STORAGE_KEYS.RECENT_PODS);
+        localStorage.removeItem(CONFIG.STORAGE_KEYS.RECENT_HUBS);
         
         console.log('🗑️ Cleared all preferences');
     }

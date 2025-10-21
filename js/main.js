@@ -49,12 +49,6 @@ class ThreeCardBlindGuruTool {
                     this.bindEvents();
                     this.handlersSetup = true;
                 }
-                
-                
-                // Initialize user preferences and connect to recent pods manager
-                if (this.authManager.userPreferences && this.authManager.userPreferences.isInitialized) {
-                    this.recentPodsManager.setUserPreferences(this.authManager.userPreferences);
-                }
 
                 // Try to initialize the guru signature from persisted preferences so it's
                 // available immediately after login (avoids race where loadSheet blocks)
@@ -68,9 +62,6 @@ class ThreeCardBlindGuruTool {
                 } catch (err) {
                     console.warn('Could not initialize guru signature from preferences:', err);
                 }
-                
-                // Initialize recent pods manager after user preferences are set
-                await this.recentPodsManager.initialize();
 
                 // Check if we should go directly to analysis mode based on URL parameters
                 const hasUrlParameters = await this.checkForDirectAnalysisMode();
@@ -118,10 +109,8 @@ class ThreeCardBlindGuruTool {
             // Initialize user preferences and connect to recent pods manager
             if (this.authManager.userPreferences && this.authManager.userPreferences.isInitialized) {
                 this.guruSignature.initSignature(await this.authManager.userPreferences.getGuruSignature());
+                // setUserPreferences already loads and renders recent pods/hubs
                 this.recentPodsManager.setUserPreferences(this.authManager.userPreferences);
-                // Reload recent pods from Google appData after login
-                await this.recentPodsManager.loadRecentPods();
-                this.recentPodsManager.renderRecentPods();
             }
         });
         // Clear preferences on logout
@@ -158,6 +147,7 @@ class ThreeCardBlindGuruTool {
         // Clear local storage
         localStorage.removeItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE);
         localStorage.removeItem(CONFIG.STORAGE_KEYS.RECENT_PODS);
+        localStorage.removeItem(CONFIG.STORAGE_KEYS.RECENT_HUBS);
         console.log('🗑️ Cleared local preferences from localStorage');
     }
 
@@ -211,6 +201,7 @@ class ThreeCardBlindGuruTool {
     async checkForDirectAnalysisMode() {
         const urlParams = new URLSearchParams(window.location.search);
         const podId = urlParams.get('pod');
+        const hubId = urlParams.get('hub');
         
         if (podId) {
             console.log('🔗 URL parameters detected, going directly to analysis mode');
@@ -218,10 +209,12 @@ class ThreeCardBlindGuruTool {
             // Hide the home screen sections
             this.uiController.hideHomeScreen();
             
-            // Handle URL parameters for auto-loading
+            // Handle URL parameters for auto-loading (includes hub if present)
             await this.handleURLParameters();
             
             return true; // Indicates we went to analysis mode
+        } else if (hubId) {
+            await this.handleURLParameters();
         }
         
         return false; // No URL parameters, use normal flow
@@ -231,9 +224,20 @@ class ThreeCardBlindGuruTool {
         const urlParams = new URLSearchParams(window.location.search);
         const podId = urlParams.get('pod');
         const guruColor = urlParams.get('guru');
+        const hubId = urlParams.get('hub');
         let rowNumber = urlParams.get('match');
         if (rowNumber === null || rowNumber === undefined) {
             rowNumber = urlParams.get('row');
+        }
+        
+        // If hub parameter is present, add it to recent hubs before rendering
+        if (hubId) {
+            try {
+                console.log(`🔗 Adding hub from URL parameter: ${hubId}`);
+                await this.recentPodsManager.addRecentHub(hubId);
+            } catch (error) {
+                console.warn('Failed to add hub from URL parameter:', error);
+            }
         }
         
         if (podId) {
@@ -263,6 +267,7 @@ class ThreeCardBlindGuruTool {
         newUrl.searchParams.delete('guru');
         newUrl.searchParams.delete('row');
         newUrl.searchParams.delete('match');
+        newUrl.searchParams.delete('hub');
         window.history.replaceState({}, '', newUrl);
     }
 
@@ -322,7 +327,14 @@ class ThreeCardBlindGuruTool {
             }
             
             // Add to recent pods
+            if (sheetData.metadata && sheetData.metadata.guruHubLink) {
+                console.log('Adding recent hub link:', sheetData.metadata.guruHubLink);
+                this.recentPodsManager.addRecentHub(sheetData.metadata.guruHubLink);
+            }
+
+            console.log('Adding recent pod:', sheetData.title || 'Untitled Pod');
             this.recentPodsManager.addRecentPod(targetSheetId, sheetData.title || 'Untitled Pod', sheetUrl);
+
             this.uiController.showStatus(`Loaded pod - ${sheetData.title || 'Untitled Pod'}`, 'success');
 
         } catch (error) {

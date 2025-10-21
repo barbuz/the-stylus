@@ -42,3 +42,42 @@ export function podNameToCode(podName) {
     // Just one word - return first letter
     return firstLetter;
 }
+
+/**
+ * Convert a pod code into a human-readable pod name.
+ *
+ * The function maps the first character of the provided podCode (case-insensitive)
+ * to a base name according to the following mapping:
+ *   - 'N' → 'Novice'
+ *   - 'A' → 'Aspirant'
+ *   - 'C' → 'Contender'
+ *   - 'E' → 'Exemplar'
+ * It then concatenates this base name with the remainder of the podCode
+ *
+ * @param {string} podCode - The pod code to convert. Must be a non-empty string
+ *                           whose first character is one of the recognized prefixes.
+ * @returns {string} The human-readable pod name formed by concatenating the mapped
+ *                   base name and the rest of the podCode.
+ * @throws {Error} If podCode is not a valid non-empty string or if the first character
+ *                 (after upper-casing) does not match one of the recognized prefixes.
+ *
+ * @example
+ * podCodeToName('A II') // => 'Aspirant II'
+ */
+export function podCodeToName(podCode) {
+    const map = {
+        'N' : 'Novice',
+        'A' : 'Aspirant',
+        'C' : 'Contender',
+        'E' : 'Exemplar'
+    };
+
+    const firstLetter = podCode.charAt(0).toUpperCase();
+
+    const baseName = map[firstLetter];
+    if (!baseName) {
+        throw new Error(`Unknown pod code prefix: ${firstLetter}`);
+    }
+
+    return `${baseName}${podCode.slice(1)}`;
+}

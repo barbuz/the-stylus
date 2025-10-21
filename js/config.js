@@ -26,5 +26,6 @@ export const CONFIG = {
         REMEMBER_USER: 'remember_user',
         LAST_LOGIN: 'last_login',
         RECENT_PODS: 'recent_pods',
+        RECENT_HUBS: 'recent_hubs',
     }
 };
