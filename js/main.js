@@ -182,13 +182,6 @@ class ThreeCardBlindGuruTool {
             }
         });
 
-        // Listen for recent pod load events
-        window.addEventListener('loadRecentPod', (event) => {
-            const { pod } = event.detail;
-            console.log(`📋 Loading recent pod: ${pod.title}`);
-            // The loadSheet() method will be called automatically by the recent pods manager
-        });
-
         // Listen for user logout to optionally handle recent pods
         window.addEventListener('userLoggedOut', () => {
             // Note: We keep recent pods even after logout so they're available when user logs back in
@@ -226,9 +219,6 @@ class ThreeCardBlindGuruTool {
         const guruColor = urlParams.get('guru');
         const hubId = urlParams.get('hub');
         let rowNumber = urlParams.get('match');
-        if (rowNumber === null || rowNumber === undefined) {
-            rowNumber = urlParams.get('row');
-        }
         
         // If hub parameter is present, add it to recent hubs before rendering
         if (hubId) {
@@ -263,11 +253,7 @@ class ThreeCardBlindGuruTool {
 
     clearInvalidURLParameters() {
         const newUrl = new URL(window.location);
-        newUrl.searchParams.delete('pod');
-        newUrl.searchParams.delete('guru');
-        newUrl.searchParams.delete('row');
-        newUrl.searchParams.delete('match');
-        newUrl.searchParams.delete('hub');
+        newUrl.search = ''
         window.history.replaceState({}, '', newUrl);
     }
 

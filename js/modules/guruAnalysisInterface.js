@@ -300,10 +300,11 @@ export class GuruAnalysisInterface {
         if (!this.currentData?.sheetId) return;
         
         const newUrl = new URL(window.location);
+        // Remove all existing query parameters
+        newUrl.search = '';
         newUrl.searchParams.set('pod', this.currentData.sheetId);
         
         if (this.currentRowIndex !== undefined && this.allRows?.length > 0) {
-            newUrl.searchParams.delete('row');
             newUrl.searchParams.set('match', (this.currentRowIndex + 1).toString());
         }
         

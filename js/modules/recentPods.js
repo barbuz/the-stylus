@@ -162,18 +162,6 @@ export class RecentPodsManager {
     }
 
     /**
-     * Update last accessed time for a pod
-     * @param {string} sheetId - Google Sheets ID
-     */
-    async updateLastAccessed(sheetId) {
-        const pod = this.recentPods.find(p => p.sheetId === sheetId);
-        if (pod) {
-            pod.lastAccessed = Date.now();
-            await this.saveRecentPods();
-        }
-    }
-
-    /**
      * Load recent hubs from localStorage or Google Drive
      */
     async loadRecentHubs() {
@@ -296,18 +284,6 @@ export class RecentPodsManager {
         await this.saveRecentHubs();
         this.renderRecentPods();
         console.log(`🗑️ Removed hub from recent list: ${sheetId}`);
-    }
-
-    /**
-     * Update last accessed time for a hub
-     * @param {string} sheetId - Google Sheets ID
-     */
-    async updateHubLastAccessed(sheetId) {
-        const hub = this.recentHubs.find(h => h.sheetId === sheetId);
-        if (hub) {
-            hub.lastAccessed = Date.now();
-            await this.saveRecentHubs();
-        }
     }
 
     /**
@@ -662,8 +638,8 @@ export class RecentPodsManager {
         try {
             console.log(`🔄 Loading recent pod: ${pod.title}`);
             
-            // Update last accessed time
-            this.updateLastAccessed(pod.sheetId);
+            // Add to recent pods to update lastAccessed timestamp
+            this.addRecentPod(pod.sheetId, pod.title, pod.url);
             
             // Set the URL in the input field
             const urlInput = getElement('sheet-url');
@@ -672,11 +648,6 @@ export class RecentPodsManager {
             } else {
                 console.warn('Sheet URL input element not found');
             }
-
-            // Dispatch event to trigger loading
-            window.dispatchEvent(new CustomEvent('loadRecentPod', {
-                detail: { pod }
-            }));
 
             // Also trigger the main load function
             const loadBtn = getElement('load-sheet-btn');
