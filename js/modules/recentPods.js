@@ -398,17 +398,31 @@ export class RecentPodsManager {
                 <span>Last opened: ${lastOpenedTimeAgo}</span>
             </div>
             </div>
-            <button class="recent-pod-remove" title="Remove from recent">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-            </svg>
-            </button>
+            <div class="hub-actions">
+                <button class="hub-refresh-btn" title="Refresh hub data">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                    </svg>
+                </button>
+                <button class="recent-pod-remove" title="Remove from recent">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                    </svg>
+                </button>
+            </div>
         `;
 
         // Add click handler for toggling hub pods
         const hubInfo = hubElement.querySelector('.recent-pod-info');
         hubInfo.addEventListener('click', async () => {
             await this.toggleHubPods(hub, hubElement);
+        });
+
+        // Add click handler for refreshing the hub
+        const refreshBtn = hubElement.querySelector('.hub-refresh-btn');
+        refreshBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            await this.refreshHub(hub, hubElement);
         });
 
         // Add click handler for removing the hub
@@ -532,6 +546,78 @@ export class RecentPodsManager {
             const errorMsg = document.createElement('div');
             errorMsg.className = 'hub-pods-error';
             errorMsg.textContent = `Error loading pods: ${error.message}`;
+            hubElement.parentNode.insertBefore(errorMsg, hubElement.nextSibling);
+            
+            // Remove error after 3 seconds
+            setTimeout(() => errorMsg.remove(), 3000);
+        }
+    }
+
+    /**
+     * Refresh hub data by forcing a re-download
+     * @param {Object} hub - Hub data
+     * @param {HTMLElement} hubElement - The hub DOM element
+     */
+    async refreshHub(hub, hubElement) {
+        const hubSheetId = hub.sheetId;
+        
+        try {
+            console.log(`🔄 Refreshing hub data: ${hub.title}`);
+            
+            // Add loading state
+            const refreshBtn = hubElement.querySelector('.hub-refresh-btn');
+            const originalIcon = refreshBtn.innerHTML;
+            refreshBtn.classList.add('refreshing');
+            refreshBtn.disabled = true;
+            
+            // Get or create HubManager for this hub
+            let hubManager = this.hubManagers.get(hubSheetId);
+            if (!hubManager) {
+                hubManager = new HubManager(hub.url);
+                this.hubManagers.set(hubSheetId, hubManager);
+            }
+            
+            // Force reload by calling loadPods() directly
+            await hubManager.loadPods();
+            
+            console.log(`✅ Hub data refreshed: ${hub.title}`);
+            
+            // If the hub is currently expanded, refresh the pods list
+            if (this.expandedHubs.has(hubSheetId)) {
+                const podsList = hubElement.nextElementSibling;
+                if (podsList && podsList.classList.contains('hub-pods-list')) {
+                    podsList.remove();
+                }
+                
+                // Remove from expanded set temporarily so toggleHubPods will expand it
+                this.expandedHubs.delete(hubSheetId);
+                // Update the expand icon since we're collapsing
+                const expandIcon = hubElement.querySelector('.hub-expand-icon');
+                if (expandIcon) expandIcon.textContent = '▶';
+                hubElement.classList.remove('expanded');
+                
+                // Re-expand with fresh data
+                await this.toggleHubPods(hub, hubElement);
+            }
+            
+            // Remove loading state
+            refreshBtn.classList.remove('refreshing');
+            refreshBtn.disabled = false;
+            
+        } catch (error) {
+            console.error('Error refreshing hub:', error);
+            
+            // Remove loading state
+            const refreshBtn = hubElement.querySelector('.hub-refresh-btn');
+            if (refreshBtn) {
+                refreshBtn.classList.remove('refreshing');
+                refreshBtn.disabled = false;
+            }
+            
+            // Show error message
+            const errorMsg = document.createElement('div');
+            errorMsg.className = 'hub-pods-error';
+            errorMsg.textContent = `Error refreshing hub: ${error.message}`;
             hubElement.parentNode.insertBefore(errorMsg, hubElement.nextSibling);
             
             // Remove error after 3 seconds

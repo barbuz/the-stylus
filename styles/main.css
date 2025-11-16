@@ -318,6 +318,51 @@ section h2, .login-section h2 {
     transition: transform 0.2s ease;
 }
 
+/* Hub actions (refresh and remove buttons) */
+.hub-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.hub-refresh-btn {
+    color: #3498db;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 5px;
+    border-radius: 3px;
+    opacity: 0.7;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.hub-refresh-btn:hover {
+    opacity: 1;
+    background: #e3f2fd;
+}
+
+.hub-refresh-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.hub-refresh-btn.refreshing svg {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+
 /* Hub pods list */
 .hub-pods-list {
     display: grid;
