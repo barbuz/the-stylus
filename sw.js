@@ -1,7 +1,7 @@
 // Service Worker for The Stylus PWA
 
 // Version configuration - UPDATE THIS to trigger a service worker update
-const APP_VERSION = 'v20251116';
+const APP_VERSION = 'v20251116-1';
 const APP_NAME = 'the-stylus';
 const CACHE_NAME = `${APP_NAME}-${APP_VERSION}`;
 
@@ -32,6 +32,7 @@ const urlsToCache = [
   `${BASE_PATH}js/utils/urlUtils.js`,
   `${BASE_PATH}images/stylus-logo.png`,
   `${BASE_PATH}images/Discord-Symbol-Blurple.svg`,
+  `${BASE_PATH}images/Discord-Symbol-Black.svg`,
   `${BASE_PATH}favicons/favicon.ico`,
   `${BASE_PATH}favicons/favicon-16x16.png`,
   `${BASE_PATH}favicons/favicon-32x32.png`,

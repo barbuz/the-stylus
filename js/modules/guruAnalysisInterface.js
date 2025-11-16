@@ -1764,39 +1764,32 @@ export class GuruAnalysisInterface {
         
         html += '</ul>';
         
-        // If current guru has an evaluation, show Discord thread link or create button
-        if (currentGuruAnalysis && currentGuruAnalysis.trim() !== '') {
-            let threadUrl = null;
-            
-            // Try to get thread URL if hub is available
-            if (this.hub) {
-                try {
-                    const rowId = currentRow.rowIndex || this.currentRowIndex + 1;
-                    threadUrl = await this.hub.getThreadById(rowId);
-                } catch (error) {
-                    console.warn('Failed to fetch thread link:', error);
-                }
-            }
-            
-            if (threadUrl) {
-                // Show Discord thread link
-                html += `<div class="thread-link" style="margin-top: 8px; font-size: 0.85em;">
-                    <a href="${threadUrl}" target="_blank" rel="noopener noreferrer" style="color: #5865F2; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
-                        <img src="images/Discord-Symbol-Blurple.svg" alt="Discord" style="width: 16px; height: 16px;" />
-                        Guru match help post
-                    </a>
-                </div>`;
-            } else {
-                // Show button to create thread text
-                html += `<div class="thread-create-btn-container" style="margin-top: 8px; font-size: 0.85em;">
-                    <button class="create-thread-btn" data-row-index="${this.currentRowIndex}">
-                        Create Guru Match Help post
-                    </button>
-                </div>`;
+        html += '</div>';
+        
+        // Manage Discord thread link/button
+        let threadUrl = null;
+        
+        // Try to get thread URL if hub is available
+        if (this.hub) {
+            try {
+                const rowId = currentRow.rowIndex || this.currentRowIndex + 1;
+                threadUrl = await this.hub.getThreadById(rowId);
+            } catch (error) {
+                console.warn('Failed to fetch thread link:', error);
             }
         }
         
-        html += '</div>';
+        if (threadUrl) {
+            // Show Discord thread link icon (blurple)
+            html += `<a href="${threadUrl}" target="_blank" rel="noopener noreferrer" class="discord-icon-link" title="Open Guru Match Help post">
+                <img src="images/Discord-Symbol-Blurple.svg" alt="Discord" />
+            </a>`;
+        } else {
+            // Show button to create thread (black icon)
+            html += `<button class="discord-icon-button create-thread-btn" data-row-index="${this.currentRowIndex}" title="Create Guru Match Help post">
+                <img src="images/Discord-Symbol-Black.svg" alt="Discord" />
+            </button>`;
+        }
         
         return html;
     }
@@ -2399,14 +2392,14 @@ export class GuruAnalysisInterface {
             // Get current guru analysis value
             const currentValue = parseFloat(currentAnalysis);
             
-            // Filter out analyses equal to current guru's analysis
-            const differentAnalyses = allAnalyses.filter(a => parseFloat(a) !== currentValue);
+            // Filter out analyses equal to current guru's analysis and remove duplicates
+            const differentAnalyses = [...new Set(allAnalyses.filter(a => parseFloat(a) !== currentValue))];
             
             // If all other analyses are the same as current, no correction needed
             if (differentAnalyses.length === 0) {
                 return '';
             }
-            
+                        
             // Convert analysis values to letters (W/T/L)
             const analysisToLetter = (value) => {
                 const numValue = parseFloat(value);
@@ -2420,7 +2413,7 @@ export class GuruAnalysisInterface {
             const otherLetters = differentAnalyses.map(analysisToLetter).join('/');
             const currentLetter = analysisToLetter(currentAnalysis);
             
-            return `\n\n${otherLetters}->${currentLetter}`;
+            return `\n\n${otherLetters} -> ${currentLetter}`;
         };
         
         const correctionString = buildCorrectionString();

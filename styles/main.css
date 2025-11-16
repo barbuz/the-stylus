@@ -1479,6 +1479,55 @@ section h2, .login-section h2 {
 /* New list-style analysis display */
 .analysis-list {
     padding: 8px 0;
+    position: relative; /* Enable absolute positioning for children */
+}
+
+/* Discord icon in top-right corner */
+.discord-icon-link,
+.discord-icon-button {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+    z-index: 10;
+}
+
+.discord-icon-link:hover,
+.discord-icon-button:hover {
+    transform: scale(1.1);
+}
+
+.discord-icon-link img,
+.discord-icon-button img {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* Add "+" symbol to Black Discord icon (create new thread) */
+.discord-icon-button::after {
+    content: '+';
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    background: white;
+    color: #000;
+    font-size: 12px;
+    font-weight: bold;
+    line-height: 12px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .guru-analyses-list {
@@ -2315,26 +2364,6 @@ section h2, .login-section h2 {
     .select-color-btn {
         width: 100%;
     }
-}
-
-/* Create Thread Button */
-.create-thread-btn {
-    color: #5865F2;
-    background: none;
-    border: 1px solid #5865F2;
-    padding: 4px 8px;
-    border-radius: 4px;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 0.95em;
-    transition: background-color 0.2s, color 0.2s;
-}
-
-.create-thread-btn:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 2px 6px rgba(88, 101, 242, 0.3);
 }
 
 /* Update Banner */
