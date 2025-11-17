@@ -1551,15 +1551,44 @@ section h2, .login-section h2 {
     color: #495057;
 }
 
-.analysis-result {
-    font-weight: 600;
+.guru-analysis-label.guru-signature {
+    text-decoration: underline dotted;
+    text-decoration-color: #6c757d;
+    cursor: help;
+    position: relative;
 }
 
-.analysis-result.win {
-    color: #28a745;
+/* Tooltip for guru signatures - hidden by default */
+.guru-signature-tooltip {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    margin-bottom: 5px;
+    background: #333;
+    color: white;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(-5px);
+    transition: opacity 0.2s ease-in, transform 0.2s ease-in;
+    z-index: 1000;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
-.analysis-result.tie {
+/* Show tooltip on hover */
+.guru-analysis-label.guru-signature:hover .guru-signature-tooltip {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Show tooltip on tap (mobile) */
+.guru-analysis-label.guru-signature:active .guru-signature-tooltip {
+    opacity: 1;
+    transform: translateY(0);
+}analysis-result.tie {
     color: #ffc107;
 }
 

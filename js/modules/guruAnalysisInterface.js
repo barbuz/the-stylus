@@ -1731,15 +1731,24 @@ export class GuruAnalysisInterface {
 
         const showOtherGurus = currentGuruAnalysis && currentGuruAnalysis.trim() !== '';
         
-        // Add other guru analyses
+        // Add other guru analyses with their signatures
         if (this.currentGuruColor !== 'red') {
-            allAnalyses.push({ name: 'Red', value: currentRow.redAnalysis, isCurrent: false });
+            const signature = currentRow.redSignature && currentRow.redSignature.trim() !== '' 
+                ? currentRow.redSignature 
+                : null;
+            allAnalyses.push({ name: 'Red', signature: signature, value: currentRow.redAnalysis, isCurrent: false });
         }
         if (this.currentGuruColor !== 'blue') {
-            allAnalyses.push({ name: 'Blue', value: currentRow.blueAnalysis, isCurrent: false });
+            const signature = currentRow.blueSignature && currentRow.blueSignature.trim() !== '' 
+                ? currentRow.blueSignature 
+                : null;
+            allAnalyses.push({ name: 'Blue', signature: signature, value: currentRow.blueAnalysis, isCurrent: false });
         }
         if (this.currentGuruColor !== 'green') {
-            allAnalyses.push({ name: 'Green', value: currentRow.greenAnalysis, isCurrent: false });
+            const signature = currentRow.greenSignature && currentRow.greenSignature.trim() !== '' 
+                ? currentRow.greenSignature 
+                : null;
+            allAnalyses.push({ name: 'Green', signature: signature, value: currentRow.greenAnalysis, isCurrent: false });
         }
         
         // Build the simple list HTML
@@ -1756,8 +1765,19 @@ export class GuruAnalysisInterface {
             const cssClass = showOtherGurus ? this.getAnalysisClass(analysis.value) : 'other';
             const prefix = analysis.isCurrent ? 'You' : analysis.name;
             
+            // Add tooltip span if signature is available
+            let labelHtml;
+            if (analysis.signature) {
+                labelHtml = `<span class="guru-analysis-label guru-signature">
+                    ${prefix}:
+                    <span class="guru-signature-tooltip">${analysis.signature}</span>
+                </span>`;
+            } else {
+                labelHtml = `<span class="guru-analysis-label">${prefix}:</span>`;
+            }
+            
             html += `<li class="guru-analysis-item">
-                <span class="guru-analysis-label">${prefix}:</span> 
+                ${labelHtml}
                 <span class="analysis-result ${cssClass}">${displayValue}</span>
             </li>`;
         });
