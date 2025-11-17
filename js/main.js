@@ -389,16 +389,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         newWorker.addEventListener('statechange', () => {
                             if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
                                 // New service worker is installed and waiting
-                                console.log('✨ New version available! Showing update banner...');
-                                showUpdateBanner(newWorker);
+                                console.log('✨ New version available! Reload page to update.');
                             }
                         });
                     });
-                    
-                    // Check for updates periodically
-                    setInterval(() => {
-                        registration.update();
-                    }, 60000); // Check every minute
                 })
                 .catch((error) => {
                     console.error('❌ Service Worker registration failed:', error);
@@ -407,44 +401,6 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('Service Worker is supported in this browser.');
     }
 });
-
-/**
- * Show update banner when new version is available
- */
-function showUpdateBanner(newWorker) {
-    const banner = document.getElementById('update-banner');
-    const reloadBtn = document.getElementById('reload-btn');
-    const dismissBtn = document.getElementById('dismiss-update-btn');
-    
-    if (!banner || !reloadBtn || !dismissBtn) {
-        console.error('Update banner elements not found');
-        return;
-    }
-    
-    // Show the banner
-    banner.style.display = 'block';
-    document.body.classList.add('update-banner-visible');
-    
-    // Remove existing listeners to prevent duplicates
-    const newReloadBtn = reloadBtn.cloneNode(true);
-    reloadBtn.parentNode.replaceChild(newReloadBtn, reloadBtn);
-    const newDismissBtn = dismissBtn.cloneNode(true);
-    dismissBtn.parentNode.replaceChild(newDismissBtn, dismissBtn);
-    
-    // Reload button handler
-    newReloadBtn.addEventListener('click', () => {
-        console.log('🔄 User initiated reload for update');
-        newWorker.postMessage({ type: 'SKIP_WAITING' });
-        // The controllerchange listener will handle the actual reload
-    });
-    
-    // Dismiss button handler
-    newDismissBtn.addEventListener('click', () => {
-        console.log('❌ User dismissed update banner');
-        banner.style.display = 'none';
-        document.body.classList.remove('update-banner-visible');
-    });
-}
 
 /**
  * Display the app version from the service worker
