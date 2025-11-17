@@ -1,7 +1,7 @@
 // Service Worker for The Stylus PWA
 
 // Version configuration - UPDATE THIS to trigger a service worker update
-const APP_VERSION = 'v20251117';
+const APP_VERSION = 'v20251117-1';
 const APP_NAME = 'the-stylus';
 const CACHE_NAME = `${APP_NAME}-${APP_VERSION}`;
 
@@ -56,7 +56,7 @@ self.addEventListener('install', (event) => {
       })
       .then(() => {
         console.log('✅ [Service Worker] Installation complete - waiting for user action');
-        // Don't call skipWaiting() here - let the user decide when to update
+        self.skipWaiting();
       })
       .catch((error) => {
         console.error('❌ [Service Worker] Installation failed:', error);
@@ -84,8 +84,7 @@ self.addEventListener('activate', (event) => {
       .then(() => {
         console.log('✅ [Service Worker] Activation complete');
         console.log('📦 [Service Worker] Active caches:', CACHE_NAME, SCRYFALL_CACHE_NAME);
-        // clients.claim() will be called after user clicks reload
-        // This ensures controlled activation
+        clients.claim();
       })
   );
 });
