@@ -1055,6 +1055,9 @@ export class GuruAnalysisInterface {
             }
         }
 
+        // Update inverse result display on mirror match button
+        this.updateInverseResultDisplay();
+
         await cards1Loaded;
         await cards2Loaded;
 
@@ -1949,15 +1952,107 @@ export class GuruAnalysisInterface {
         await this.showCurrentRow();
     }
 
-    async skipToMirrorMatch() {
-        // Jump to the match where player1 and player2 are swapped
-        const currentRow = this.allRows[this.currentRowIndex];
-
+    /**
+     * Find the index of the mirror match (inverse) for a given row
+     * @param {number} rowIndex - Index of the row to find the mirror for
+     * @returns {number} - Index of the mirror match, or -1 if not found
+     */
+    findMirrorMatchIndex(rowIndex) {
+        if (rowIndex < 0 || rowIndex >= this.allRows.length) {
+            return -1;
+        }
+        
+        const currentRow = this.allRows[rowIndex];
+        
         const mirrorIndex = this.allRows.findIndex((row, index) =>
-            index !== this.currentRowIndex && // Exclude current row
+            index !== rowIndex && // Exclude current row
             row.player1 === currentRow.player2 && // Swapped players
             row.player2 === currentRow.player1
         );
+        
+        return mirrorIndex;
+    }
+
+    /**
+     * Update the display of the inverse match result on the mirror match button
+     */
+    updateInverseResultDisplay() {
+        const mirrorMatchBtn = document.getElementById('mirror-match-btn');
+        if (!mirrorMatchBtn) return;
+
+        // Get current row's outcome value
+        const currentRow = this.allRows[this.currentRowIndex];
+        const currentOutcome = currentRow.outcomeValue;
+
+
+        // Find the mirror match
+        const mirrorIndex = this.findMirrorMatchIndex(this.currentRowIndex);
+        if (mirrorIndex === -1) {
+            // Reset button to just arrow if no mirror match found
+            mirrorMatchBtn.textContent = '↕';
+            mirrorMatchBtn.removeAttribute('data-outcome');
+            mirrorMatchBtn.className = 'mirror-match-btn';
+            mirrorMatchBtn.title = 'Jump to mirror match';
+            return;
+        }
+
+        // Get inverse match outcome
+        const inverseRow = this.allRows[mirrorIndex];
+        const inverseOutcome = inverseRow.outcomeValue;
+
+        // Only show if inverse match has a valid result
+        if (!inverseOutcome || inverseOutcome.trim() === '' ||
+            inverseOutcome.toLowerCase() === 'incomplete' ||
+            inverseOutcome.toLowerCase() === 'discrepancy') {
+            // Reset button to just arrow if inverse outcome is invalid
+            mirrorMatchBtn.textContent = '↕';
+            mirrorMatchBtn.removeAttribute('data-outcome');
+            mirrorMatchBtn.className = 'mirror-match-btn';
+            mirrorMatchBtn.title = 'Jump to mirror match';
+            return;
+        }
+
+        // Convert outcome to letter (W/T/L)
+        const outcomeToLetter = (outcome) => {
+            const numValue = parseFloat(outcome);
+            if (!isNaN(numValue)) {
+                if (numValue === 1.0) return 'W';
+                if (numValue === 0.5) return 'T';
+                if (numValue === 0.0) return 'L';
+            }
+            return '?';
+        };
+
+        const inverseLetter = outcomeToLetter(inverseOutcome);
+        
+        // Check if this is a suspected error
+        // Error condition: at least one is Loss AND neither is Win
+        const currentNumValue = parseFloat(currentOutcome);
+        const inverseNumValue = parseFloat(inverseOutcome);
+        const isSuspectedError = 
+            !isNaN(currentNumValue) && !isNaN(inverseNumValue) &&
+            (currentNumValue === 0.0 || inverseNumValue === 0.0) && // At least one is Loss
+            (currentNumValue !== 1.0 && inverseNumValue !== 1.0);   // Neither is Win
+
+        // Update button content to show arrow and set outcome letter as data attribute
+        mirrorMatchBtn.textContent = '↕';
+        mirrorMatchBtn.setAttribute('data-outcome', inverseLetter);
+        
+        // Update button styling based on error status
+        mirrorMatchBtn.className = 'mirror-match-btn';
+        mirrorMatchBtn.classList.add('has-outcome');
+        if (isSuspectedError) {
+            mirrorMatchBtn.classList.add('inverse-error');
+        }
+        
+        // Update tooltip to include inverse result info
+        mirrorMatchBtn.title = `Jump to mirror match\nInverse result: ${this.formatAnalysisValue(inverseOutcome)}`;
+    }
+
+    async skipToMirrorMatch() {
+        // Jump to the match where player1 and player2 are swapped
+        const mirrorIndex = this.findMirrorMatchIndex(this.currentRowIndex);
+        
         if (mirrorIndex !== -1) {
             this.currentRowIndex = mirrorIndex;
             await this.showCurrentRow();
