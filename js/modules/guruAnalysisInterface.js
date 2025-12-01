@@ -1980,27 +1980,20 @@ export class GuruAnalysisInterface {
         const mirrorMatchBtn = document.getElementById('mirror-match-btn');
         if (!mirrorMatchBtn) return;
 
-        // Remove any existing inverse result display
-        const existingResult = mirrorMatchBtn.parentElement.querySelector('.inverse-result');
-        if (existingResult) {
-            existingResult.remove();
-        }
-
         // Get current row's outcome value
         const currentRow = this.allRows[this.currentRowIndex];
         const currentOutcome = currentRow.outcomeValue;
 
-        // Only show inverse result if current match has a result (not empty, incomplete, or discrepancy)
-        if (!currentOutcome || currentOutcome.trim() === '' || 
-            currentOutcome.toLowerCase() === 'incomplete' || 
-            currentOutcome.toLowerCase() === 'discrepancy') {
-            return;
-        }
 
         // Find the mirror match
         const mirrorIndex = this.findMirrorMatchIndex(this.currentRowIndex);
         if (mirrorIndex === -1) {
-            return; // No mirror match found
+            // Reset button to just arrow if no mirror match found
+            mirrorMatchBtn.textContent = '↕';
+            mirrorMatchBtn.removeAttribute('data-outcome');
+            mirrorMatchBtn.className = 'mirror-match-btn';
+            mirrorMatchBtn.title = 'Jump to mirror match';
+            return;
         }
 
         // Get inverse match outcome
@@ -2011,6 +2004,11 @@ export class GuruAnalysisInterface {
         if (!inverseOutcome || inverseOutcome.trim() === '' ||
             inverseOutcome.toLowerCase() === 'incomplete' ||
             inverseOutcome.toLowerCase() === 'discrepancy') {
+            // Reset button to just arrow if inverse outcome is invalid
+            mirrorMatchBtn.textContent = '↕';
+            mirrorMatchBtn.removeAttribute('data-outcome');
+            mirrorMatchBtn.className = 'mirror-match-btn';
+            mirrorMatchBtn.title = 'Jump to mirror match';
             return;
         }
 
@@ -2036,17 +2034,19 @@ export class GuruAnalysisInterface {
             (currentNumValue === 0.0 || inverseNumValue === 0.0) && // At least one is Loss
             (currentNumValue !== 1.0 && inverseNumValue !== 1.0);   // Neither is Win
 
-        // Create and insert the inverse result display
-        const inverseResultDiv = document.createElement('div');
-        inverseResultDiv.className = 'inverse-result';
+        // Update button content to show arrow and set outcome letter as data attribute
+        mirrorMatchBtn.textContent = '↕';
+        mirrorMatchBtn.setAttribute('data-outcome', inverseLetter);
+        
+        // Update button styling based on error status
+        mirrorMatchBtn.className = 'mirror-match-btn';
+        mirrorMatchBtn.classList.add('has-outcome');
         if (isSuspectedError) {
-            inverseResultDiv.classList.add('error');
+            mirrorMatchBtn.classList.add('inverse-error');
         }
-        inverseResultDiv.textContent = inverseLetter;
-        inverseResultDiv.title = `Inverse match result: ${this.formatAnalysisValue(inverseOutcome)}`;
-
-        // Insert after the mirror match button
-        mirrorMatchBtn.parentElement.insertBefore(inverseResultDiv, mirrorMatchBtn.nextSibling);
+        
+        // Update tooltip to include inverse result info
+        mirrorMatchBtn.title = `Jump to mirror match\nInverse result: ${this.formatAnalysisValue(inverseOutcome)}`;
     }
 
     async skipToMirrorMatch() {
