@@ -2388,29 +2388,47 @@ export class GuruAnalysisInterface {
         const modal = document.createElement('div');
         modal.className = 'match-table-modal';
 
-        // Table
         const table = document.createElement('table');
         table.className = 'match-table';
+
+        let lastDeck = null;
+        const deckCardCache = new Map();
+        const groupedRowsHtml = this.allRows.map((row, idx) => {
+            const parts = [];
+            if (row.player1 !== lastDeck) {
+                lastDeck = row.player1;
+                parts.push(`
+                    <tr class="deck-group-header">
+                        <th colspan="3" class="deck-group-header-name">
+                            <span class="deck-group-header-p1">P1</span>
+                            ${lastDeck || 'Unknown deck'}
+                        </th>
+                    </tr>
+                `);
+            }
+
+            const sig = this.getCurrentRowSignature(row) || '';
+            const highlight = idx === this.currentRowIndex ? 'current-row' : '';
+            parts.push(`
+                <tr data-row="${idx}" class="${highlight}">
+                    <td>${idx + 1}</td>
+                    <td>${row.player2}</td>
+                    <td>${sig}</td>
+                </tr>
+            `);
+            return parts.join('');
+        }).join('');
+
         table.innerHTML = `
             <thead>
                 <tr>
                     <th>#</th>
-                    <th>Player 1 Deck</th>
                     <th>Player 2 Deck</th>
                     <th>Signature</th>
                 </tr>
             </thead>
             <tbody>
-                ${this.allRows.map((row, idx) => {
-                    const sig = this.getCurrentRowSignature(row) || '';
-                    const highlight = idx === this.currentRowIndex ? 'current-row' : '';
-                    return `<tr data-row="${idx}" class="${highlight}">
-                        <td>${idx + 1}</td>
-                        <td>${row.player1}</td>
-                        <td>${row.player2}</td>
-                        <td>${sig}</td>
-                    </tr>`;
-                }).join('')}
+                ${groupedRowsHtml}
             </tbody>
         `;
         modal.appendChild(table);
@@ -2436,8 +2454,16 @@ export class GuruAnalysisInterface {
             }
         });
 
-        // Auto-scroll to the current match row
+        // Auto-scroll to the current match row and set sticky offsets once layout is ready
         requestAnimationFrame(() => {
+            const thead = table.querySelector('thead');
+            if (thead) {
+                const headHeight = thead.getBoundingClientRect().height;
+                if (headHeight) {
+                    table.style.setProperty('--match-table-head-offset', `${headHeight}px`);
+                }
+            }
+
             const currentRow = table.querySelector('tr.current-row');
             if (currentRow) {
                 currentRow.scrollIntoView({ block: 'center', behavior: 'auto' });
