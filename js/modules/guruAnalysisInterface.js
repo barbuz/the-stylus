@@ -2376,7 +2376,7 @@ export class GuruAnalysisInterface {
     }
 
     // --- MATCH TABLE MODAL ---
-    showMatchTableModal() {
+    async showMatchTableModal() {
         // Remove any existing modal
         this.closeMatchTableModal();
 
@@ -2391,15 +2391,16 @@ export class GuruAnalysisInterface {
         const table = document.createElement('table');
         table.className = 'match-table';
 
+        const threadMap = await this.getMatchTableThreadMap();
+        const tableColumnCount = 4;
         let lastDeck = null;
-        const deckCardCache = new Map();
         const groupedRowsHtml = this.allRows.map((row, idx) => {
             const parts = [];
             if (row.player1 !== lastDeck) {
                 lastDeck = row.player1;
                 parts.push(`
                     <tr class="deck-group-header">
-                        <th colspan="3" class="deck-group-header-name">
+                        <th colspan="${tableColumnCount}" class="deck-group-header-name">
                             <span class="deck-group-header-p1">P1</span>
                             ${lastDeck || 'Unknown deck'}
                         </th>
@@ -2408,11 +2409,15 @@ export class GuruAnalysisInterface {
             }
 
             const sig = this.getCurrentRowSignature(row) || '';
+            const hasThread = this.hasDiscordThreadForRow(threadMap, row, idx);
+            const statusDescriptor = this.getMatchStatus(row, idx, { hasThread });
+            const statusMarkup = this.renderMatchStatus(statusDescriptor);
             const highlight = idx === this.currentRowIndex ? 'current-row' : '';
             parts.push(`
                 <tr data-row="${idx}" class="${highlight}">
                     <td>${idx + 1}</td>
                     <td>${row.player2}</td>
+                    <td class="match-status-cell">${statusMarkup}</td>
                     <td>${sig}</td>
                 </tr>
             `);
@@ -2424,6 +2429,7 @@ export class GuruAnalysisInterface {
                 <tr>
                     <th>#</th>
                     <th>Player 2 Deck</th>
+                    <th>Status</th>
                     <th>Signature</th>
                 </tr>
             </thead>
@@ -2474,6 +2480,223 @@ export class GuruAnalysisInterface {
     closeMatchTableModal() {
         const existing = document.querySelector('.match-table-overlay');
         if (existing) existing.remove();
+    }
+
+    getMatchStatus(row, rowIndex, options = {}) {
+        const currentSignature = (this.getCurrentRowSignature(row) || '').trim();
+        if (!currentSignature) {
+            return {
+                key: 'unclaimed',
+                label: 'Unclaimed',
+                type: 'emoji',
+                value: ''
+            };
+        }
+
+        const hasResult = this.hasCurrentGuruResult(row);
+        if (!hasResult) {
+            return {
+                key: 'claimed',
+                label: 'Claimed',
+                type: 'emoji',
+                value: '⏳'
+            };
+        }
+
+        const hasThread = Boolean(options.hasThread);
+        const hasDiscrepancy = this.rowHasDiscrepancy(row);
+        if (hasDiscrepancy && hasThread) {
+            return {
+                key: 'discrepancy_thread',
+                label: 'Discrepancy (thread exists)',
+                type: 'emoji',
+                value: '⚠️'
+            };
+        }
+        if (hasDiscrepancy) {
+            return {
+                key: 'discrepancy',
+                label: 'Discrepancy',
+                type: 'emoji',
+                value: '❗'
+            };
+        }
+
+        const inverseSuspected = this.isInverseErrorSuspected(rowIndex);
+        if (inverseSuspected) {
+            return {
+                key: 'inverse_error',
+                label: 'Inverse error suspected',
+                type: 'emoji',
+                value: '↕️'
+            };
+        }
+
+        if (this.allGurusHaveMatchingResults(row)) {
+            return {
+                key: 'complete',
+                label: 'Complete',
+                type: 'image',
+                value: 'images/compleated.webp'
+            };
+        }
+
+        return {
+            key: 'solved',
+            label: 'Solved',
+            type: 'emoji',
+            value: '✅'
+        };
+    }
+
+    renderMatchStatus(status) {
+        if (!status) {
+            return '';
+        }
+
+        const label = status.label || '';
+        if (status.type === 'image' && status.value) {
+            return `<img src="${status.value}" alt="${label}" title="${label}" class="match-status-icon match-status-image" loading="lazy" />`;
+        }
+
+        const content = status.value || '';
+        if (!content) {
+            return `<span class="match-status-icon match-status-empty" aria-label="${label}" title="${label}"></span>`;
+        }
+
+        return `<span class="match-status-icon" aria-label="${label}" title="${label}">${content}</span>`;
+    }
+
+    async getMatchTableThreadMap() {
+        if (!this.hub) {
+            return null;
+        }
+
+        try {
+            return await this.hub.getThreads();
+        } catch (error) {
+            console.warn('Failed to load thread data for match table:', error);
+            return this.hub.threadsCache || null;
+        }
+    }
+
+    getRowThreadId(row, fallbackIndex) {
+        if (row && typeof row.rowIndex === 'number') {
+            return row.rowIndex;
+        }
+        if (row && typeof row.originalRowIndex === 'number') {
+            return row.originalRowIndex;
+        }
+        return fallbackIndex + 1;
+    }
+
+    hasDiscordThreadForRow(threadMap, row, fallbackIndex) {
+        if (!threadMap || typeof threadMap.has !== 'function') {
+            return false;
+        }
+        const rowId = this.getRowThreadId(row, fallbackIndex);
+        return rowId != null && threadMap.has(rowId);
+    }
+
+    hasCurrentGuruResult(row) {
+        const currentAnalysis = this.getCurrentGuruAnalysis(row);
+        return currentAnalysis && currentAnalysis.toString().trim() !== '';
+    }
+
+    rowHasDiscrepancy(row) {
+        const outcomeValue = (row.outcomeValue || '').toString().toLowerCase().trim();
+        if (outcomeValue === 'discrepancy') {
+            return true;
+        }
+
+        const normalizedAnalyses = this.getGuruAnalysisValues(row)
+            .map(value => this.normalizeAnalysisForComparison(value))
+            .filter(Boolean);
+
+        return normalizedAnalyses.length >= 2 && new Set(normalizedAnalyses).size > 1;
+    }
+
+    getGuruAnalysisValues(row) {
+        if (!row) {
+            return [];
+        }
+        return [row.redAnalysis || '', row.blueAnalysis || '', row.greenAnalysis || ''];
+    }
+
+    allGurusHaveMatchingResults(row) {
+        const normalizedAnalyses = this.getGuruAnalysisValues(row)
+            .map(value => this.normalizeAnalysisForComparison(value))
+            .filter(Boolean);
+        return normalizedAnalyses.length === 3 && new Set(normalizedAnalyses).size === 1;
+    }
+
+    normalizeAnalysisForComparison(value) {
+        if (value == null) {
+            return '';
+        }
+        const str = value.toString().trim();
+        if (!str) {
+            return '';
+        }
+        const num = parseFloat(str);
+        if (!isNaN(num)) {
+            return num.toString();
+        }
+        return str.toLowerCase();
+    }
+
+    isInverseErrorSuspected(rowIndex) {
+        if (rowIndex == null || rowIndex < 0 || rowIndex >= this.allRows.length) {
+            return false;
+        }
+
+        const currentRow = this.allRows[rowIndex];
+        if (!currentRow) {
+            return false;
+        }
+
+        const mirrorIndex = this.findMirrorMatchIndex(rowIndex);
+        if (mirrorIndex === -1) {
+            return false;
+        }
+
+        const inverseRow = this.allRows[mirrorIndex];
+        if (!inverseRow) {
+            return false;
+        }
+
+        const currentOutcome = currentRow.outcomeValue;
+        const inverseOutcome = inverseRow.outcomeValue;
+
+        if (!this.isOutcomeValueValidForInverse(currentOutcome) ||
+            !this.isOutcomeValueValidForInverse(inverseOutcome)) {
+            return false;
+        }
+
+        const currentNum = parseFloat(currentOutcome);
+        const inverseNum = parseFloat(inverseOutcome);
+
+        return (
+            (currentNum === 0.0 || inverseNum === 0.0) &&
+            currentNum !== 1.0 &&
+            inverseNum !== 1.0
+        );
+    }
+
+    isOutcomeValueValidForInverse(value) {
+        if (value == null) {
+            return false;
+        }
+        const str = value.toString().trim();
+        if (!str) {
+            return false;
+        }
+        const lower = str.toLowerCase();
+        if (lower === 'incomplete' || lower === 'discrepancy') {
+            return false;
+        }
+        const num = parseFloat(str);
+        return !isNaN(num);
     }
 
     /**
