@@ -905,6 +905,28 @@ section h2, .login-section h2 {
     white-space: nowrap;
     max-width: 25vw;
 }
+.match-table .match-status-cell {
+    width: 5rem;
+    text-align: center;
+}
+.match-status-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.35rem;
+    line-height: 1;
+}
+.match-status-image {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+}
+.match-status-empty {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 1px dashed #b0bec5;
+}
 .match-table .deck-group-header th {
     position: sticky;
     top: var(--match-table-head-offset, 0px);

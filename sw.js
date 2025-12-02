@@ -33,6 +33,7 @@ const urlsToCache = [
   `${BASE_PATH}images/stylus-logo.png`,
   `${BASE_PATH}images/Discord-Symbol-Blurple.svg`,
   `${BASE_PATH}images/Discord-Symbol-Black.svg`,
+  `${BASE_PATH}images/compleated.webp`,
   `${BASE_PATH}favicons/favicon.ico`,
   `${BASE_PATH}favicons/favicon-16x16.png`,
   `${BASE_PATH}favicons/favicon-32x32.png`,
