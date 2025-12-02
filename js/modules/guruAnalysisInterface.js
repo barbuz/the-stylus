@@ -2413,8 +2413,9 @@ export class GuruAnalysisInterface {
             const statusDescriptor = this.getMatchStatus(row, idx, { hasThread });
             const statusMarkup = this.renderMatchStatus(statusDescriptor);
             const highlight = idx === this.currentRowIndex ? 'current-row' : '';
+            const isCurrentGuruRow = sig === this.guruSignature ? 'current-guru-row' : '';
             parts.push(`
-                <tr data-row="${idx}" class="${highlight}">
+                <tr data-row="${idx}" class="${highlight} ${isCurrentGuruRow}">
                     <td>${idx + 1}</td>
                     <td>${row.player2}</td>
                     <td class="match-status-cell">${statusMarkup}</td>

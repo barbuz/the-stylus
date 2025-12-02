@@ -896,6 +896,13 @@ section h2, .login-section h2 {
     background: #bbdefb;
     font-weight: bold;
 }
+.match-table tr.current-guru-row {
+    background: #e8f5e8;
+}
+.match-table tr.current-row.current-guru-row {
+    background: #bbdefb;
+    font-weight: bold;
+}
 .match-table tr[data-row]:hover {
     background: #e3f2fd;
 }
@@ -958,6 +965,13 @@ section h2, .login-section h2 {
     .match-table th, .match-table td {
         padding: 6px 4px;
         font-size: 0.95em;
+    }
+    .match-table th:nth-child(4),
+    .match-table td:nth-child(4) {
+        display: none;
+    }
+    .match-table .deck-group-header th {
+        column-span: 3;
     }
 }
 
