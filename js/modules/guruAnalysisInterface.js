@@ -138,6 +138,7 @@ export class GuruAnalysisInterface {
         document.getElementById('skip-btn').addEventListener('click', () => this.skipToNextIncomplete());
         document.getElementById('discrepancy-btn').addEventListener('click', () => this.skipToNextDiscrepancy());
         document.getElementById('mirror-match-btn').addEventListener('click', () => this.skipToMirrorMatch());
+        document.getElementById('next-deck-btn').addEventListener('click', () => this.skipToNextDeck());
 
         // Guru color selector
         this.bindGuruColorSelector();
@@ -911,6 +912,10 @@ export class GuruAnalysisInterface {
             if (unclaimButton) unclaimButton.style.display = 'none';
             if (clearButton) clearButton.style.display = 'none';
             
+            // Hide Next Deck button
+            const nextDeckBtn = document.getElementById('next-deck-btn');
+            if (nextDeckBtn) nextDeckBtn.style.display = 'none';
+            
             // Get the current analysis value for the claimed row
             const currentAnalysis = this.getCurrentGuruAnalysis(currentRow);
             const analysisText = currentAnalysis && currentAnalysis.trim() !== '' ? 
@@ -988,12 +993,22 @@ export class GuruAnalysisInterface {
                 claimDeckBtn.textContent = `Claim Deck (${deckStats.unclaimedMatches}/${deckStats.totalMatches})`;
                 claimDeckBtn.style.display = 'inline-block';
             }
+
+            // --- Next Deck Button ---
+            const nextDeckBtn = document.getElementById('next-deck-btn');
+            if (nextDeckBtn) {
+                nextDeckBtn.style.display = 'inline-block';
+            }
         } else if (isRowOwnedByCurrentUser) {
             // Show scoring buttons, hide claimed message and claim/claim deck buttons
             scoringButtons.forEach(btn => btn.style.display = '');
             if (claimedMessage) claimedMessage.style.display = 'none';
             if (claimButton) claimButton.style.display = 'none';
             if (claimDeckButton) claimDeckButton.style.display = 'none';
+            
+            // Hide Next Deck button
+            const nextDeckBtn = document.getElementById('next-deck-btn');
+            if (nextDeckBtn) nextDeckBtn.style.display = 'none';
 
             // Check if user has scored this match yet
             const currentAnalysis = this.getCurrentGuruAnalysis(currentRow);
@@ -1989,6 +2004,55 @@ export class GuruAnalysisInterface {
             this.currentGuruColor = result.color;
         }
         await this.showCurrentRow();
+    }
+
+    /**
+     * Find the first unclaimed match with a different P1 deck from the current one
+     * @returns {number} - Index of the next deck match, or current index if none found
+     */
+    findNextDeck() {
+        if (this.currentRowIndex >= this.allRows.length || this.currentRowIndex < 0) {
+            return this.currentRowIndex;
+        }
+
+        const currentRow = this.allRows[this.currentRowIndex];
+        const player1Deck = currentRow.player1;
+        if (!player1Deck) {
+            return this.currentRowIndex;
+        }
+
+        // Search from current row + 1 to end
+        for (let i = this.currentRowIndex + 1; i < this.allRows.length; i++) {
+            const row = this.allRows[i];
+            
+            // Check if this row has a different P1 deck and is unclaimed
+            if (row.player1 !== player1Deck && this.rowHasEmptySignature(row)) {
+                return i;
+            }
+        }
+
+        // If not found, search from beginning to current row
+        for (let i = 0; i < this.currentRowIndex; i++) {
+            const row = this.allRows[i];
+            
+            // Check if this row has a different P1 deck and is unclaimed
+            if (row.player1 !== player1Deck && this.rowHasEmptySignature(row)) {
+                return i;
+            }
+        }
+
+        // If no different deck found, return current index
+        return this.currentRowIndex;
+    }
+
+    async skipToNextDeck() {
+        const nextDeckIndex = this.findNextDeck();
+        if (nextDeckIndex !== this.currentRowIndex) {
+            this.currentRowIndex = nextDeckIndex;
+            await this.showCurrentRow();
+        } else {
+            this.uiController.showStatus('No other unclaimed decks found', 'info');
+        }
     }
 
     /**
