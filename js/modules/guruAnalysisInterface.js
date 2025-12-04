@@ -963,13 +963,19 @@ export class GuruAnalysisInterface {
                 claimDeckBtn = document.createElement('button');
                 claimDeckBtn.id = 'claim-deck-button';
                 claimDeckBtn.className = 'claim-btn primary-btn';
-                claimDeckBtn.textContent = 'Claim Deck';
+                
+                // Set initial button text with deck stats
+                const deckStats = this.getDeckStats();
+                claimDeckBtn.textContent = `Claim Deck (${deckStats.unclaimedMatches}/${deckStats.totalMatches})`;
+                
                 claimDeckBtn.addEventListener('click', async () => {
                     claimDeckBtn.disabled = true;
                     claimDeckBtn.innerHTML = '<span class="spinner"></span> Claiming...';
                     await this.claimDeckRows();
                     claimDeckBtn.disabled = false;
-                    claimDeckBtn.textContent = 'Claim Deck';
+                    // Update button text after claiming
+                    const updatedStats = this.getDeckStats();
+                    claimDeckBtn.textContent = `Claim Deck (${updatedStats.unclaimedMatches}/${updatedStats.totalMatches})`;
                 });
                 if (claimBtn && claimBtn.nextSibling) {
                     claimBtn.parentNode.insertBefore(claimDeckBtn, claimBtn.nextSibling);
@@ -977,6 +983,9 @@ export class GuruAnalysisInterface {
                     claimBtn.parentNode.appendChild(claimDeckBtn);
                 }
             } else {
+                // Update existing button text with current deck stats
+                const deckStats = this.getDeckStats();
+                claimDeckBtn.textContent = `Claim Deck (${deckStats.unclaimedMatches}/${deckStats.totalMatches})`;
                 claimDeckBtn.style.display = 'inline-block';
             }
         } else if (isRowOwnedByCurrentUser) {
@@ -1815,6 +1824,36 @@ export class GuruAnalysisInterface {
         }
         
         return html;
+    }
+
+    /**
+     * Get deck statistics for the current row's Player 1 deck
+     * @returns {Object} Object with totalMatches and unclaimedMatches
+     */
+    getDeckStats() {
+        if (this.currentRowIndex >= this.allRows.length || this.currentRowIndex < 0) {
+            return { totalMatches: 0, unclaimedMatches: 0 };
+        }
+
+        const currentRow = this.allRows[this.currentRowIndex];
+        const player1Deck = currentRow.player1;
+        if (!player1Deck) {
+            return { totalMatches: 0, unclaimedMatches: 0 };
+        }
+
+        // Find all rows with the same Player 1 deck
+        const deckRows = this.allRows.filter(row => row.player1 === player1Deck);
+        
+        // Count unclaimed matches (those without current guru signature)
+        const unclaimedMatches = deckRows.filter(row => {
+            const signature = this.getCurrentRowSignature(row);
+            return !signature || signature.trim() === '';
+        }).length;
+
+        return {
+            totalMatches: deckRows.length,
+            unclaimedMatches: unclaimedMatches
+        };
     }
 
     /**
