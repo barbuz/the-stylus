@@ -172,7 +172,7 @@ export class HubManager {
             // Get the spreadsheet data with hyperlinks
             const response = await gapi.client.sheets.spreadsheets.get({
                 spreadsheetId: this.hubSheetId,
-                ranges: ["'Totals'!A:Z"],
+                ranges: ["'Totals'"],
                 fields: 'sheets.data.rowData.values(formattedValue,hyperlink)'
             });
 
