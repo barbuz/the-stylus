@@ -1046,7 +1046,7 @@ section h2, .login-section h2 {
 
 /* Fullscreen analysis mode */
 .fullscreen-analysis {
-    position: fixed;
+    position: absolute;
     top: 0;
     left: 0;
     right: 0;
@@ -1061,9 +1061,14 @@ section h2, .login-section h2 {
 @media (max-width: 768px) {
     .fullscreen-analysis {
         overflow-y: auto;
-        position: fixed;
-        height: 100vh;
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        min-height: 100vh;
         -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+        padding-bottom: env(safe-area-inset-bottom, 20px); /* Standard bottom padding for mobile browsers */
     }
     
     /* Ensure body doesn't interfere with scrolling */
@@ -1078,6 +1083,7 @@ section h2, .login-section h2 {
     .fullscreen-analysis .guru-analysis-interface {
         -webkit-overflow-scrolling: touch;
         overscroll-behavior: contain;
+        padding-bottom: env(safe-area-inset-bottom, 40px); /* Add safe area padding */
     }
 }
 
@@ -1125,6 +1131,7 @@ section h2, .login-section h2 {
     flex-shrink: 0;
     order: 3;
     margin-top: auto;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom, 20px)); /* Standard bottom padding for mobile browsers */
 }
 
 /* Multi-sheet layout */
@@ -2054,14 +2061,16 @@ section h2, .login-section h2 {
         height: auto;
         min-height: 100vh;
         overflow-y: visible;
+        padding-bottom: env(safe-area-inset-bottom, 0); /* Add safe area padding */
     }
     
     .fullscreen-analysis .content-sidebar {
-        flex: none;
+    flex: none;
         order: 2;
         padding: 10px;
         height: auto;
         overflow-y: visible;
+        padding-bottom: calc(10px + env(safe-area-inset-bottom, 20px)); /* Standard bottom padding for mobile browsers */
     }
     
     .fullscreen-analysis .match-details {
