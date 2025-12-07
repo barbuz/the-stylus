@@ -1064,6 +1064,7 @@ section h2, .login-section h2 {
         position: fixed;
         height: 100vh;
         -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+        padding-bottom: env(safe-area-inset-bottom, 20px); /* Add safe area padding */
     }
     
     /* Ensure body doesn't interfere with scrolling */
@@ -1078,6 +1079,7 @@ section h2, .login-section h2 {
     .fullscreen-analysis .guru-analysis-interface {
         -webkit-overflow-scrolling: touch;
         overscroll-behavior: contain;
+        padding-bottom: env(safe-area-inset-bottom, 0); /* Add safe area padding */
     }
 }
 
@@ -1125,6 +1127,7 @@ section h2, .login-section h2 {
     flex-shrink: 0;
     order: 3;
     margin-top: auto;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom, 20px)); /* Add safe area padding */
 }
 
 /* Multi-sheet layout */
@@ -2054,6 +2057,7 @@ section h2, .login-section h2 {
         height: auto;
         min-height: 100vh;
         overflow-y: visible;
+        padding-bottom: env(safe-area-inset-bottom, 0); /* Add safe area padding */
     }
     
     .fullscreen-analysis .content-sidebar {
@@ -2062,6 +2066,7 @@ section h2, .login-section h2 {
         padding: 10px;
         height: auto;
         overflow-y: visible;
+        padding-bottom: calc(10px + env(safe-area-inset-bottom, 0)); /* Add safe area padding */
     }
     
     .fullscreen-analysis .match-details {
