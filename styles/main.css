@@ -1696,7 +1696,17 @@ section h2, .login-section h2 {
 .guru-analysis-label.guru-signature:active .guru-signature-tooltip {
     opacity: 1;
     transform: translateY(0);
-}analysis-result.tie {
+}
+
+.analysis-result {
+    font-weight: 600;
+}
+
+.analysis-result.win {
+    color: #28a745;
+}
+
+.analysis-result.tie {
     color: #ffc107;
 }
 
