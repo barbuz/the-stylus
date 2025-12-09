@@ -5,7 +5,7 @@ import { GuruSignature } from './modules/guruSignature.js';
 import { GuruAnalysisInterface } from './modules/guruAnalysisInterface.js';
 import { RecentPodsManager } from './modules/recentPods.js';
 import { CONFIG } from './config.js';
-import { isValidGoogleSheetsUrl, extractSheetId } from './utils/urlUtils.js';
+import { isValidGoogleSheetsUrl, extractSheetId, sanitizeUrlParam } from './utils/urlUtils.js';
 
 class ThreeCardBlindGuruTool {
     constructor() {
@@ -193,8 +193,8 @@ class ThreeCardBlindGuruTool {
 
     async checkForDirectAnalysisMode() {
         const urlParams = new URLSearchParams(window.location.search);
-        const podId = urlParams.get('pod');
-        const hubId = urlParams.get('hub');
+        const podId = sanitizeUrlParam(urlParams.get('pod'));
+        const hubId = sanitizeUrlParam(urlParams.get('hub'));
         
         if (podId) {
             console.log('🔗 URL parameters detected, going directly to analysis mode');
@@ -215,10 +215,10 @@ class ThreeCardBlindGuruTool {
 
     async handleURLParameters() {
         const urlParams = new URLSearchParams(window.location.search);
-        const podId = urlParams.get('pod');
-        const guruColor = urlParams.get('guru');
-        const hubId = urlParams.get('hub');
-        let rowNumber = urlParams.get('match');
+        const podId = sanitizeUrlParam(urlParams.get('pod'));
+        const guruColor = sanitizeUrlParam(urlParams.get('guru'));
+        const hubId = sanitizeUrlParam(urlParams.get('hub'));
+        let rowNumber = sanitizeUrlParam(urlParams.get('match'));
         
         // If hub parameter is present, add it to recent hubs before rendering
         if (hubId) {
@@ -236,7 +236,7 @@ class ThreeCardBlindGuruTool {
                 
                 this.showLoading('Loading pod data...');
                 // Load the pod by ID
-                await this.loadSheet(podId, guruColor, parseInt(rowNumber, 10));
+                await this.loadSheet(podId, guruColor, rowNumber ? parseInt(rowNumber, 10) : null);
                 
                 this.hideLoading();
                 

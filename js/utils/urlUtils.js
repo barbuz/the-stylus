@@ -32,3 +32,18 @@ export function extractSheetId(urlOrId) {
     const match = urlOrId.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
     return match ? match[1] : null;
 }
+
+/**
+ * Sanitize a URL parameter value that may have been mangled by external apps.
+ * Trims whitespace and removes trailing characters like ")," or extra commas/parentheses.
+ * @param {string|null|undefined} value
+ * @returns {string|null} sanitized value or null if input was falsy
+ */
+export function sanitizeUrlParam(value) {
+    if (value === null || value === undefined) return null;
+    let v = String(value).trim();
+    // Remove any trailing commas and parentheses that may have been appended,
+    // e.g. "SHEET_ID)," or "SHEET_ID),"
+    v = v.replace(/[\),]+$/g, '');
+    return v;
+}
