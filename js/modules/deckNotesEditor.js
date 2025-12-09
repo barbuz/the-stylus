@@ -228,6 +228,12 @@ export class DeckNotesEditor {
         const sheetEditor = document.getElementById('sheet-editor');
         sheetEditor.insertBefore(deckNotesContainer, sheetEditor.firstChild);
 
+        // Hide the guru analysis interface while the deck notes editor is open
+        const analysisInterfaceEl = document.getElementById('guru-analysis-interface');
+        if (analysisInterfaceEl) {
+            analysisInterfaceEl.style.display = 'none';
+        }
+
         // Set up periodic updates
         if (this._updateInterval) {
             clearInterval(this._updateInterval);
@@ -269,6 +275,12 @@ export class DeckNotesEditor {
         }
         this.stopPeriodicUpdate();
         
+        // Restore the guru analysis interface visibility when closing the deck notes editor
+        const analysisInterfaceEl = document.getElementById('guru-analysis-interface');
+        if (analysisInterfaceEl) {
+            analysisInterfaceEl.style.display = '';
+        }
+
         if (backToHome) {
             this.uiController.showSheetInputSection();
         }
