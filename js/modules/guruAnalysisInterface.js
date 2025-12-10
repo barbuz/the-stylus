@@ -793,6 +793,28 @@ export class GuruAnalysisInterface {
         }
     }
 
+    isCurrentMatchAvailableForAnalysis() {
+        // Check if there's a current row selected
+        if (this.currentRowIndex < 0 || this.currentRowIndex >= this.allRows.length) {
+            return false;
+        }
+
+        const currentRow = this.allRows[this.currentRowIndex];
+        
+        // Check if the current row has the current guru's signature
+        const hasMySignature = this.rowHasCurrentGuruSignature(currentRow);
+        
+        // Check if the current row is unclaimed
+        const isUnclaimed = this.rowHasEmptySignature(currentRow);
+        
+        // Check if the current guru's analysis is empty or incomplete
+        const currentAnalysis = this.getCurrentGuruAnalysis(currentRow);
+        const needsSolving = !currentAnalysis || currentAnalysis.trim() === '';
+        
+        // Return true if the match is mine and needs solving, OR if it's unclaimed and needs solving
+        return (hasMySignature || isUnclaimed) && needsSolving;
+    }
+
     async showCurrentRow() {
         // Update URL with current state
         this.updateURL();
@@ -2090,23 +2112,19 @@ export class GuruAnalysisInterface {
 
         // Find the mirror match
         const mirrorIndex = this.findMirrorMatchIndex(this.currentRowIndex);
-        if (mirrorIndex === -1) {
-            // Reset button to just arrow if no mirror match found
-            mirrorMatchBtn.textContent = '↕';
-            mirrorMatchBtn.removeAttribute('data-outcome');
-            mirrorMatchBtn.className = 'mirror-match-btn';
-            mirrorMatchBtn.title = 'Jump to mirror match';
-            return;
-        }
-
         // Get inverse match outcome
         const inverseRow = this.allRows[mirrorIndex];
         const inverseOutcome = inverseRow.outcomeValue;
 
-        // Only show if inverse match has a valid result
-        if (!inverseOutcome || inverseOutcome.trim() === '' ||
-            inverseOutcome.toLowerCase() === 'incomplete' ||
-            inverseOutcome.toLowerCase() === 'discrepancy') {
+        // Only show if inverse match exists and has a valid result, and I'm not about to solve it
+        if (
+            mirrorIndex >= 0 &&
+            (!inverseOutcome ||
+                inverseOutcome.trim() === '' ||
+                inverseOutcome.toLowerCase() === 'incomplete' ||
+                inverseOutcome.toLowerCase() === 'discrepancy') &&
+            !isCurrentMatchAvailableForAnalysis()
+        ) {
             // Reset button to just arrow if inverse outcome is invalid
             mirrorMatchBtn.textContent = '↕';
             mirrorMatchBtn.removeAttribute('data-outcome');
@@ -2115,13 +2133,13 @@ export class GuruAnalysisInterface {
             return;
         }
 
-        // Convert outcome to letter (W/T/L)
+        // Convert outcome to letter (W/T/L) - inverted to show what the P1 deck does going second
         const outcomeToLetter = (outcome) => {
             const numValue = parseFloat(outcome);
             if (!isNaN(numValue)) {
-                if (numValue === 1.0) return 'W';
+                if (numValue === 0.0) return 'W';
                 if (numValue === 0.5) return 'T';
-                if (numValue === 0.0) return 'L';
+                if (numValue === 1.0) return 'L';
             }
             return '?';
         };
