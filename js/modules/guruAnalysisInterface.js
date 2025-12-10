@@ -635,13 +635,8 @@ export class GuruAnalysisInterface {
         for (let i = startFromIndex; i < this.allRows.length; i++) {
             const row = this.allRows[i];
             
-            // Check if this row has the current guru's signature
-            if (this.rowHasCurrentGuruSignature(row)) {
-                // Check for empty analysis
-                const currentAnalysis = this.getCurrentGuruAnalysis(row);
-                if (!currentAnalysis || currentAnalysis.trim() === '') {
-                    return i;
-                }
+            if (this.isMatchAvailableForAnalysis(row)) {
+                return i;
             }
         }
         
@@ -650,13 +645,8 @@ export class GuruAnalysisInterface {
             for (let i = 0; i < startFromIndex-1; i++) {
                 const row = this.allRows[i];
                 
-                // Check if this row has the current guru's signature
-                if (this.rowHasCurrentGuruSignature(row)) {
-                    // Check for empty analysis
-                    const currentAnalysis = this.getCurrentGuruAnalysis(row);
-                    if (!currentAnalysis || currentAnalysis.trim() === '') {
-                        return i;
-                    }
+                if (this.isMatchAvailableForAnalysis(row)) {
+                    return i;
                 }
             }
         }
@@ -800,15 +790,18 @@ export class GuruAnalysisInterface {
         }
 
         const currentRow = this.allRows[this.currentRowIndex];
+        return this.isMatchAvailableForAnalysis(currentRow);
+    }
+
+    isMatchAvailableForAnalysis(row) {
+        // Check if the row has the current guru's signature
+        const hasMySignature = this.rowHasCurrentGuruSignature(row);
         
-        // Check if the current row has the current guru's signature
-        const hasMySignature = this.rowHasCurrentGuruSignature(currentRow);
-        
-        // Check if the current row is unclaimed
-        const isUnclaimed = this.rowHasEmptySignature(currentRow);
+        // Check if the row is unclaimed
+        const isUnclaimed = this.rowHasEmptySignature(row);
         
         // Check if the current guru's analysis is empty or incomplete
-        const currentAnalysis = this.getCurrentGuruAnalysis(currentRow);
+        const currentAnalysis = this.getCurrentGuruAnalysis(row);
         const needsSolving = !currentAnalysis || currentAnalysis.trim() === '';
         
         // Return true if the match is mine and needs solving, OR if it's unclaimed and needs solving
@@ -1778,7 +1771,7 @@ export class GuruAnalysisInterface {
             isCurrent: true 
         });
 
-        const showOtherGurus = currentGuruAnalysis && currentGuruAnalysis.trim() !== '';
+        const showOtherGurus = !this.isMatchAvailableForAnalysis(currentRow);
         
         // Add other guru analyses with their signatures
         if (this.currentGuruColor !== 'red') {
@@ -2114,7 +2107,7 @@ export class GuruAnalysisInterface {
         const mirrorIndex = this.findMirrorMatchIndex(this.currentRowIndex);
         // Get inverse match outcome
         const inverseRow = this.allRows[mirrorIndex];
-        const inverseOutcome = inverseRow.outcomeValue;
+        const inverseOutcome = inverseRow?.outcomeValue;
 
         // Only show if inverse match exists and has a valid result, and I'm not about to solve it
         if (
@@ -2122,8 +2115,8 @@ export class GuruAnalysisInterface {
             (!inverseOutcome ||
                 inverseOutcome.trim() === '' ||
                 inverseOutcome.toLowerCase() === 'incomplete' ||
-                inverseOutcome.toLowerCase() === 'discrepancy') &&
-            !isCurrentMatchAvailableForAnalysis()
+                inverseOutcome.toLowerCase() === 'discrepancy') ||
+            this.isCurrentMatchAvailableForAnalysis()
         ) {
             // Reset button to just arrow if inverse outcome is invalid
             mirrorMatchBtn.textContent = '↕';
