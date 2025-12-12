@@ -619,7 +619,7 @@ export class GuruAnalysisInterface {
             const row = this.allRows[i];
             
             // Check for empty analysis using the helper method
-            const currentAnalysis = this.getCurrentGuruAnalysis(row);
+            const currentAnalysis = this.getCurrentColorAnalysis(row);
             if (!currentAnalysis || currentAnalysis.trim() === '') {
                 return false;
             }
@@ -635,7 +635,7 @@ export class GuruAnalysisInterface {
         for (let i = startFromIndex; i < this.allRows.length; i++) {
             const row = this.allRows[i];
             
-            if (this.isMatchAvailableForAnalysis(row)) {
+            if (this.rowHasCurrentGuruSignature(row) && (this.getCurrentColorAnalysis(row).trim()==='')) {
                 return i;
             }
         }
@@ -722,7 +722,7 @@ export class GuruAnalysisInterface {
         return { index: startFromIndex === 0 ? 0 : startFromIndex, color: this.currentGuruColor };
     }
 
-    getCurrentGuruAnalysis(row) {
+    getCurrentColorAnalysis(row) {
         // Get the current guru's analysis value based on guru color
         switch (this.currentGuruColor) {
             case 'red':
@@ -736,7 +736,7 @@ export class GuruAnalysisInterface {
         }
     }
 
-    getCurrentRowSignature(row) {
+    getCurrentColorSignature(row) {
         // Get the current row's signature for the current guru color
         switch (this.currentGuruColor) {
             case 'red':
@@ -756,31 +756,14 @@ export class GuruAnalysisInterface {
             return false;
         }
         
-        // Check the current guru's signature column based on guru color
-        switch (this.currentGuruColor) {
-            case 'red':
-                return row.redSignature === currentSignature;
-            case 'blue':
-                return row.blueSignature === currentSignature;
-            case 'green':
-                return row.greenSignature === currentSignature;
-            default:
-                return false;
-        }
+        return this.getCurrentColorSignature(row) == currentSignature;
     }
 
     rowHasEmptySignature(row) {
         // Check if the current guru's signature column is empty
-        switch (this.currentGuruColor) {
-            case 'red':
-                return !row.redSignature || row.redSignature.trim() === '';
-            case 'blue':
-                return !row.blueSignature || row.blueSignature.trim() === '';
-            case 'green':
-                return !row.greenSignature || row.greenSignature.trim() === '';
-            default:
-                return true;
-        }
+        const currentRowSignature = this.getCurrentColorSignature();
+
+        return !currentRowSignature || currentRowSignature.trim() === '';
     }
 
     isCurrentMatchAvailableForAnalysis() {
@@ -801,7 +784,7 @@ export class GuruAnalysisInterface {
         const isUnclaimed = this.rowHasEmptySignature(row);
         
         // Check if the current guru's analysis is empty or incomplete
-        const currentAnalysis = this.getCurrentGuruAnalysis(row);
+        const currentAnalysis = this.getCurrentColorAnalysis(row);
         const needsSolving = !currentAnalysis || currentAnalysis.trim() === '';
         
         // Return true if the match is mine and needs solving, OR if it's unclaimed and needs solving
@@ -905,7 +888,7 @@ export class GuruAnalysisInterface {
         analysisElement.innerHTML = await this.buildAnalysisDisplayWithOthers(currentRow, currentRow.outcomeValue || '');
 
         // Check if this row is claimed by another guru
-        const currentRowSignature = this.getCurrentRowSignature(currentRow);
+        const currentRowSignature = this.getCurrentColorSignature(currentRow);
 
         const isRowClaimedByAnotherGuru = currentRowSignature && currentRowSignature.trim() !== '' && currentRowSignature !== this.guruSignature;
         const isRowUnclaimed = !currentRowSignature || currentRowSignature.trim() === '';
@@ -932,7 +915,7 @@ export class GuruAnalysisInterface {
             if (nextDeckBtn) nextDeckBtn.style.display = 'none';
             
             // Get the current analysis value for the claimed row
-            const currentAnalysis = this.getCurrentGuruAnalysis(currentRow);
+            const currentAnalysis = this.getCurrentColorAnalysis(currentRow);
             const analysisText = currentAnalysis && currentAnalysis.trim() !== '' ? 
                 ` - Analysis: ${this.formatAnalysisValue(currentAnalysis)}` : '';
             
@@ -1026,7 +1009,7 @@ export class GuruAnalysisInterface {
             if (nextDeckBtn) nextDeckBtn.style.display = 'none';
 
             // Check if user has scored this match yet
-            const currentAnalysis = this.getCurrentGuruAnalysis(currentRow);
+            const currentAnalysis = this.getCurrentColorAnalysis(currentRow);
             const hasUserScored = currentAnalysis && currentAnalysis.trim() !== '';
 
             // Manage unclaim / clear buttons
@@ -1480,14 +1463,14 @@ export class GuruAnalysisInterface {
         
 
         // Verify that the current user owns this match
-        const currentRowSignature = this.getCurrentRowSignature(currentRow);
+        const currentRowSignature = this.getCurrentColorSignature(currentRow);
         if (currentRowSignature !== this.guruSignature) {
             this.uiController.showStatus('You can only unclaim matches that you have claimed.', 'error');
             return;
         }
 
         // Check if user has already scored this match
-        const currentAnalysis = this.getCurrentGuruAnalysis(currentRow);
+        const currentAnalysis = this.getCurrentColorAnalysis(currentRow);
         if (currentAnalysis && currentAnalysis.trim() !== '') {
             this.uiController.showStatus('Cannot unclaim a match that has already been scored.', 'error');
             return;
@@ -1567,14 +1550,14 @@ export class GuruAnalysisInterface {
 
 
         // Verify that the current user owns this match
-        const currentRowSignature = this.getCurrentRowSignature(currentRow);
+        const currentRowSignature = this.getCurrentColorSignature(currentRow);
         if (currentRowSignature !== this.guruSignature) {
             this.uiController.showStatus('You can only clear results for matches you own.', 'error');
             return;
         }
 
         // Check if user actually has an analysis to clear
-        const currentAnalysis = this.getCurrentGuruAnalysis(currentRow);
+        const currentAnalysis = this.getCurrentColorAnalysis(currentRow);
         if (!currentAnalysis || currentAnalysis.trim() === '') {
             this.uiController.showStatus('No analysis to clear for this match.', 'info');
             return;
@@ -1758,7 +1741,7 @@ export class GuruAnalysisInterface {
 
     async buildAnalysisDisplayWithOthers(currentRow, outcomeValue = '') {
         // Get current guru's analysis
-        const currentGuruAnalysis = this.getCurrentGuruAnalysis(currentRow);
+        const currentGuruAnalysis = this.getCurrentColorAnalysis(currentRow);
         
         // Collect all guru analyses (including current guru)
         const allAnalyses = [];
@@ -1876,7 +1859,7 @@ export class GuruAnalysisInterface {
         
         // Count unclaimed matches (those without current guru signature)
         const unclaimedMatches = deckRows.filter(row => {
-            const signature = this.getCurrentRowSignature(row);
+            const signature = this.getCurrentColorSignature(row);
             return !signature || signature.trim() === '';
         }).length;
 
@@ -2522,7 +2505,7 @@ export class GuruAnalysisInterface {
                 `);
             }
 
-            const sig = this.getCurrentRowSignature(row) || '';
+            const sig = this.getCurrentColorSignature(row) || '';
             const hasThread = this.hasDiscordThreadForRow(threadMap, row, idx);
             const statusDescriptor = this.getMatchStatus(row, idx, { hasThread });
             const statusMarkup = this.renderMatchStatus(statusDescriptor);
@@ -2598,7 +2581,7 @@ export class GuruAnalysisInterface {
     }
 
     getMatchStatus(row, rowIndex, options = {}) {
-        const currentSignature = (this.getCurrentRowSignature(row) || '').trim();
+        const currentSignature = (this.getCurrentColorSignature(row) || '').trim();
         if (!currentSignature) {
             return {
                 key: 'unclaimed',
@@ -2714,7 +2697,7 @@ export class GuruAnalysisInterface {
     }
 
     hasCurrentGuruResult(row) {
-        const currentAnalysis = this.getCurrentGuruAnalysis(row);
+        const currentAnalysis = this.getCurrentColorAnalysis(row);
         return currentAnalysis && currentAnalysis.toString().trim() !== '';
     }
 
@@ -2856,7 +2839,7 @@ export class GuruAnalysisInterface {
         
         // Build correction string (e.g., "W/T->L")
         const buildCorrectionString = () => {
-            const currentAnalysis = this.getCurrentGuruAnalysis(currentRow);
+            const currentAnalysis = this.getCurrentColorAnalysis(currentRow);
             if (!currentAnalysis || currentAnalysis.trim() === '') {
                 return '';
             }
