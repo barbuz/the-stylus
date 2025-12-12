@@ -538,18 +538,7 @@ export class GuruAnalysisInterface {
             // Calculate outcome based on all guru analyses
             const outcomeValue = this.calculateOutcomeFromAnalyses(redAnalysis, blueAnalysis, greenAnalysis);
 
-            // Check for discrepancies for the current guru
-            const row_signatures = [redSignature, blueSignature, greenSignature];
-            if (row_signatures.includes(this.guruSignature)) {
-                // If the current guru signature is present, check for discrepancies
-                if (outcomeValue.toLowerCase().trim() === 'discrepancy') {
-                    discrepancies++;
-                }
-            }
-
-            // Only include rows that have player data
-            if (player1.trim() || player2.trim()) {
-                this.allRows.push({
+            const newRow = {
                     sheetIndex,
                     sheetTitle: sheet.title,
                     sheetId: sheet.sheetId,
@@ -564,7 +553,17 @@ export class GuruAnalysisInterface {
                     blueSignature: blueSignature,
                     greenSignature: greenSignature,
                     originalRowIndex: originalRowIndex // Use the original row index from unfiltered data
-                });
+                }
+
+            // Check for discrepancies for the current guru
+            const row_signatures = [redSignature, blueSignature, greenSignature];
+            if (row_signatures.includes(this.guruSignature) && this.rowHasDiscrepancy(newRow)) {
+                    discrepancies++;
+            }
+
+            // Only include rows that have player data
+            if (player1.trim() || player2.trim()) {
+                this.allRows.push(newRow);
             }
         }
 
@@ -635,7 +634,7 @@ export class GuruAnalysisInterface {
         for (let i = startFromIndex; i < this.allRows.length; i++) {
             const row = this.allRows[i];
             
-            if (this.rowHasCurrentGuruSignature(row) && (this.getCurrentColorAnalysis(row).trim()==='')) {
+            if (this.rowHasCurrentGuruSignatureInColor(row) && (this.getCurrentColorAnalysis(row).trim()==='')) {
                 return i;
             }
         }
@@ -683,19 +682,8 @@ export class GuruAnalysisInterface {
         // Look for discrepancies that belong to current guru (have current guru's signature)
         for (let i = startFromIndex; i < this.allRows.length; i++) {
             const row = this.allRows[i];
-            // Determine which signature column (if any) matches the current signature for this row
-            const rowSignatures = {
-                red: row.redSignature,
-                blue: row.blueSignature,
-                green: row.greenSignature
-            };
-            for (const color of ['red', 'blue', 'green']) {
-                if (rowSignatures[color] === this.guruSignature) {
-                    // Check for discrepancy
-                    if (row.outcomeValue && row.outcomeValue.toLowerCase().trim() === 'discrepancy') {
-                        return { index: i, color };
-                    }
-                }
+            if (this.rowHasCurrentGuruSignature(row) && this.rowHasDiscrepancy(row)){
+                return i
             }
         }
 
@@ -703,23 +691,14 @@ export class GuruAnalysisInterface {
         if (startFromIndex > 0) {
             for (let i = 0; i < startFromIndex; i++) {
                 const row = this.allRows[i];
-                const rowSignatures = {
-                    red: row.redSignature,
-                    blue: row.blueSignature,
-                    green: row.greenSignature
-                };
-                for (const color of ['red', 'blue', 'green']) {
-                    if (rowSignatures[color] === this.guruSignature) {
-                        if (row.outcomeValue && row.outcomeValue.toLowerCase().trim() === 'discrepancy') {
-                            return { index: i, color };
-                        }
-                    }
+                if (this.rowHasCurrentGuruSignature(row) && this.rowHasDiscrepancy(row)){
+                    return i
                 }
             }
         }
 
-        // If no discrepancies found, return the start index (or 0) and keep current color
-        return { index: startFromIndex === 0 ? 0 : startFromIndex, color: this.currentGuruColor };
+        // If no discrepancies found, return -1
+        return -1;
     }
 
     getCurrentColorAnalysis(row) {
@@ -755,13 +734,22 @@ export class GuruAnalysisInterface {
         if (!currentSignature.trim()) {
             return false;
         }
+
+        return [row.redSignature, row.blueSignature, row.greenSignature].includes(currentSignature)
+    }
+
+    rowHasCurrentGuruSignatureInColor(row) {
+        const currentSignature = this.guruSignature || '';
+        if (!currentSignature.trim()) {
+            return false;
+        }
         
         return this.getCurrentColorSignature(row) == currentSignature;
     }
 
     rowHasEmptySignature(row) {
         // Check if the current guru's signature column is empty
-        const currentRowSignature = this.getCurrentColorSignature();
+        const currentRowSignature = this.getCurrentColorSignature(row);
 
         return !currentRowSignature || currentRowSignature.trim() === '';
     }
@@ -778,7 +766,7 @@ export class GuruAnalysisInterface {
 
     isMatchAvailableForAnalysis(row) {
         // Check if the row has the current guru's signature
-        const hasMySignature = this.rowHasCurrentGuruSignature(row);
+        const hasMySignature = this.rowHasCurrentGuruSignatureInColor(row);
         
         // Check if the row is unclaimed
         const isUnclaimed = this.rowHasEmptySignature(row);
@@ -1596,11 +1584,22 @@ export class GuruAnalysisInterface {
             }
 
             // Recalculate outcome
+            const oldOutcome = currentRow.outcomeValue;
             currentRow.outcomeValue = this.calculateOutcomeFromAnalyses(
                 currentRow.redAnalysis,
                 currentRow.blueAnalysis,
                 currentRow.greenAnalysis
             );
+
+            // Update the number of discrepancies
+            if (oldOutcome === 'discrepancy' && currentRow.outcomeValue !== 'discrepancy'){
+                this.numDiscrepancies--;
+            } else if (oldOutcome !== 'discrepancy' && currentRow.outcomeValue === 'discrepancy'){
+                this.numDiscrepancies++;
+            }
+
+            // Reload data in the background to get fresh updates without moving to next row
+            this.reloadAllDataInBackground();
 
             this.uiController.showStatus('Your analysis was cleared.', 'success');
 
@@ -1897,6 +1896,24 @@ export class GuruAnalysisInterface {
         }
         return -1;
     }
+
+    /**
+     * Returns the color that the current guru has claimed in a particular row, or null
+     * if that row does not have the current guru's signature. 
+     */
+    getGuruColorInRow(row){
+        if (row.redSignature === this.guruSignature){
+            return 'red';
+        }
+        if (row.blueSignature === this.guruSignature){
+            return 'blue';
+        }
+        if (row.greenSignature === this.guruSignature){
+            return 'green';
+        }
+
+        return null
+    }
     
     getOutcomeDisplayName(outcomeValue) {
         if (!outcomeValue || outcomeValue.trim() === '') return '';
@@ -1995,11 +2012,19 @@ export class GuruAnalysisInterface {
 
     async skipToNextDiscrepancy() {
         // Find the next row with discrepancy starting from after current row
-        const result = this.findFirstDiscrepancy(this.currentRowIndex + 1);
-        this.currentRowIndex = result.index;
-        // If a color was returned for the found row, switch to that guru color
-        if (result.color) {
-            this.currentGuruColor = result.color;
+        const targetIndex = this.findFirstDiscrepancy(this.currentRowIndex + 1);
+        if (targetIndex >= 0) {
+            this.currentRowIndex = targetIndex;
+        }
+        // If the row we jump to has a discrepancy but the guru is in a different color,
+        // change to that color
+        const targetRow = this.allRows[this.currentRowIndex];
+        if (this.rowHasDiscrepancy(targetRow)){
+            const color = this.getGuruColorInRow(targetRow);
+            console.log(color)
+            if (color){
+                this.currentGuruColor = color;
+            }
         }
         await this.showCurrentRow();
     }
@@ -2591,7 +2616,7 @@ export class GuruAnalysisInterface {
             };
         }
 
-        const hasResult = this.hasCurrentGuruResult(row);
+        const hasResult = this.hasCurrentColorResult(row);
         if (!hasResult) {
             return {
                 key: 'claimed',
@@ -2696,7 +2721,7 @@ export class GuruAnalysisInterface {
         return rowId != null && threadMap.has(rowId);
     }
 
-    hasCurrentGuruResult(row) {
+    hasCurrentColorResult(row) {
         const currentAnalysis = this.getCurrentColorAnalysis(row);
         return currentAnalysis && currentAnalysis.toString().trim() !== '';
     }

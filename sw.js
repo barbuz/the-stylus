@@ -1,7 +1,7 @@
 // Service Worker for The Stylus PWA
 
 // Version configuration - UPDATE THIS to trigger a service worker update
-const APP_VERSION = 'v20251210';
+const APP_VERSION = 'v20251212';
 const APP_NAME = 'the-stylus';
 const CACHE_NAME = `${APP_NAME}-${APP_VERSION}`;
 
