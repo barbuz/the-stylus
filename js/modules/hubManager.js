@@ -217,7 +217,7 @@ export class HubManager {
             // Check row 2 for "Sheet Link" (since it spans rows 1-2)
             headerRow2.forEach((cell, index) => {
                 const value = cell?.formattedValue?.toString().toLowerCase().trim();
-                if (value?.includes('sheet') && value?.includes('link')) {
+                if (value === 'sheet link') {
                     sheetLinkIndex = index;
                 }
             });
@@ -226,7 +226,7 @@ export class HubManager {
             if (sheetLinkIndex === -1) {
                 headerRow1.forEach((cell, index) => {
                     const value = cell?.formattedValue?.toString().toLowerCase().trim();
-                    if (value?.includes('sheet') && value?.includes('link')) {
+                    if (value === 'sheet link') {
                         sheetLinkIndex = index;
                     }
                 });
