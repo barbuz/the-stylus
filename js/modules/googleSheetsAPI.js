@@ -16,12 +16,14 @@ export class GoogleSheetsAPI {
             const metadataSheet = metadata.sheets.find(sheet => 
                 sheet.title.toLowerCase() === 'metadata'
             );
-            const customMetadataPromise = metadataSheet 
-                ? this.getCustomMetadata(sheetId, metadataSheet)
-                : Promise.resolve({});
+
+            const customMetadata = metadataSheet ? await this.getCustomMetadata(sheetId, metadataSheet) : {};
+            if (metadataSheet && Object.keys(customMetadata).length > 0) {
+                console.log('📋 Found metadata sheet:', customMetadata);
+            }
             
             // Only process specific sheets needed for the application
-            const requiredSheetNames = ['Deck Notes', 'Red Gurus', 'Blue Gurus', 'Green Gurus'];
+            const requiredSheetNames = customMetadata.dataSheets || ['Deck Notes', 'Red Gurus', 'Blue Gurus', 'Green Gurus'];
             const sheetsToProcess = metadata.sheets.filter(sheet => 
                 requiredSheetNames.some(requiredName => 
                     sheet.title.toLowerCase().includes(requiredName.toLowerCase())
@@ -58,13 +60,7 @@ export class GoogleSheetsAPI {
                 if (mergedGuruSheet) {
                     console.log("Merged Guru Sheets:", mergedGuruSheet);
                 }
-            }
-
-            // Wait for custom metadata to finish loading
-            const customMetadata = await customMetadataPromise;
-            if (metadataSheet && Object.keys(customMetadata).length > 0) {
-                console.log('📋 Found metadata sheet:', customMetadata);
-            }
+            }    
 
             return {
                 sheetId,
@@ -81,7 +77,8 @@ export class GoogleSheetsAPI {
     /**
      * Fetches custom metadata from a "metadata" sheet.
      * The sheet should have rows with structure: [Variable Name, Checkmark, Value]
-     * Returns an object with variable names as keys and their values.
+     * If a variable name spans multiple rows (merged cells), collects all values as an array.
+     * Returns an object with variable names as keys and their values (or arrays of values).
      */
     async getCustomMetadata(spreadsheetId, metadataSheet) {
         try {
@@ -92,14 +89,22 @@ export class GoogleSheetsAPI {
 
             const values = response.result.values || [];
             const metadata = {};
+            let currentVariableName = null;
 
-            // Parse each row (skip header if present)
+            // Parse each row
             for (let i = 0; i < values.length; i++) {
                 const row = values[i];
                 if (row && row.length >= 3) {
-                    const variableName = row[0]?.trim();
-                    // row[1] is the checkmark - we ignore it
+                    let variableName = row[0]?.trim();
                     const value = row[2]?.trim();
+
+                    // Handle merged cells: if variable name is empty, use the previous one
+                    if (!variableName && currentVariableName) {
+                        variableName = currentVariableName;
+                    } else if (variableName) {
+                        // This is a new variable name
+                        currentVariableName = variableName;
+                    }
 
                     // Only add if we have both a variable name and value
                     if (variableName && value) {
@@ -113,7 +118,18 @@ export class GoogleSheetsAPI {
                             )
                             .join('');
                         
-                        metadata[key] = value;
+                        // Check if this key already exists
+                        if (metadata.hasOwnProperty(key)) {
+                            // If it exists and is already an array, push to it
+                            if (Array.isArray(metadata[key])) {
+                                metadata[key].push(value);
+                            } else {
+                                // Convert single value to array and add new value
+                                metadata[key] = [metadata[key], value];
+                            }
+                        } else {
+                            metadata[key] = value;
+                        }
                     }
                 }
             }
@@ -127,32 +143,22 @@ export class GoogleSheetsAPI {
     }
 
     async mergeGuruSheets(sheetId, guruSheets) {
-        // Sort sheets to ensure consistent order: Red, Blue, Green
-        const sortedSheets = guruSheets.sort((a, b) => {
-            const order = ['red', 'blue', 'green'];
-            const aIndex = order.findIndex(color => a.title.toLowerCase().includes(color));
-            const bIndex = order.findIndex(color => b.title.toLowerCase().includes(color));
-            return aIndex - bIndex;
-        });
+        // Get base data from first guru sheet (columns A:D)
+        const baseGuruSheet = guruSheets[0];
 
-        // Get base data from Red Gurus sheet (columns A:D)
-        const redGuruSheet = sortedSheets.find(sheet => 
-            sheet.title.toLowerCase().includes('red')
-        );
-
-        if (!redGuruSheet) {
-            throw new Error('Red Gurus sheet not found');
+        if (!baseGuruSheet) {
+            throw new Error('No guru sheets found');
         }
 
         // Run all queries in parallel for maximum performance
         const allPromises = [
-            // Base data query (A:C from Red Gurus, excluding outcome column D)
+            // Base data query (A:C from base guru sheet, excluding outcome column D)
             gapi.client.sheets.spreadsheets.values.get({
                 spreadsheetId: sheetId,
-                range: `'${redGuruSheet.title}'!A1:C1000`,
+                range: `'${baseGuruSheet.title}'!A1:C1000`,
             }),
             // Analysis and signature queries for all guru sheets
-            ...sortedSheets.map(async (sheet) => {
+            ...guruSheets.map(async (sheet) => {
                 const color = sheet.title.toLowerCase().includes('red') ? 'red' :
                              sheet.title.toLowerCase().includes('blue') ? 'blue' : 'green';
                 
@@ -189,10 +195,11 @@ export class GoogleSheetsAPI {
             // Create header row: ID, Player 1, Player 2, Red Analysis, Red Signature, Blue Analysis, Blue Signature, Green Analysis, Green Signature
             const headerRow = [
                 ...baseValues[0], // A:C from base (ID, Player 1, Player 2)
-                'Red Analysis', 'Red Signature',
-                'Blue Analysis', 'Blue Signature', 
-                'Green Analysis', 'Green Signature'
-            ];
+            ]
+            for (const color of ['red', 'blue', 'green']){
+                headerRow.push(color + ' Analysis')
+                headerRow.push(color + ' Signature')
+            }
             mergedValues.push(headerRow);
 
             // Merge data rows
@@ -221,7 +228,7 @@ export class GoogleSheetsAPI {
             }
         }
 
-        const hidden = sortedSheets.some(sheet => sheet.hidden);
+        const hidden = guruSheets.some(sheet => sheet.hidden);
 
         return {
             title: 'Merged Gurus',
@@ -232,9 +239,9 @@ export class GoogleSheetsAPI {
             columnMapping: this.getMergedGuruColumnMapping(),
             hidden: hidden,
             guruSheetIds: {
-                red: sortedSheets.find(s => s.title.toLowerCase().includes('red'))?.sheetId,
-                blue: sortedSheets.find(s => s.title.toLowerCase().includes('blue'))?.sheetId,
-                green: sortedSheets.find(s => s.title.toLowerCase().includes('green'))?.sheetId
+                red: guruSheets.find(s => s.title.toLowerCase().includes('red'))?.sheetId,
+                blue: guruSheets.find(s => s.title.toLowerCase().includes('blue'))?.sheetId,
+                green: guruSheets.find(s => s.title.toLowerCase().includes('green'))?.sheetId
             }
         };
     }
@@ -722,3 +729,5 @@ export class GoogleSheetsAPI {
         }
     }
 }
+
+
