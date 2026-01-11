@@ -49,7 +49,7 @@ export class HubManager {
             // We need to use spreadsheets.get to access hyperlink formulas
             const response = await gapi.client.sheets.spreadsheets.get({
                 spreadsheetId: this.hubSheetId,
-                ranges: ["'All Threads'!A:C"],
+                ranges: ["'All Threads'!A:D"],
                 fields: 'sheets.data.rowData.values(formattedValue,hyperlink)'
             });
 
@@ -72,17 +72,17 @@ export class HubManager {
             // Find column indices from header row
             const headerRow = rowData[0].values || [];
             const podIndex = headerRow.findIndex(cell => 
-                cell?.formattedValue?.toLowerCase().includes('pod')
+                cell?.formattedValue?.toLowerCase().trim() === 'pod'
             );
             const threadIndex = headerRow.findIndex(cell => 
-                cell?.formattedValue?.toLowerCase().includes('thread')
+                cell?.formattedValue?.toLowerCase().trim() === 'thread'
             );
             const idIndex = headerRow.findIndex(cell => 
-                cell?.formattedValue?.toLowerCase().includes('id')
+                cell?.formattedValue?.toLowerCase().trim() === 'id#'
             );
 
             if (podIndex === -1 || threadIndex === -1 || idIndex === -1) {
-                throw new Error('Required columns not found in All Threads sheet. Expected: Pod, Thread, ID#');
+                throw new Error('Required columns not found in All Threads sheet. Expected: Pod, Thread, ID#. Found: ' + headerRow.map(cell => cell?.formattedValue).join(', '));
             }
 
             // Build the mapping from ID# to Thread URL for rows matching our pod code
