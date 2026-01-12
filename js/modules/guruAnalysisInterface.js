@@ -556,8 +556,7 @@ export class GuruAnalysisInterface {
                 }
 
             // Check for discrepancies for the current guru
-            const row_signatures = [redSignature, blueSignature, greenSignature];
-            if (row_signatures.includes(this.guruSignature) && this.rowHasDiscrepancy(newRow)) {
+            if (this.rowHasMyDiscrepancy(newRow)) {
                     discrepancies++;
             }
 
@@ -644,7 +643,7 @@ export class GuruAnalysisInterface {
             for (let i = 0; i < startFromIndex-1; i++) {
                 const row = this.allRows[i];
                 
-                if (this.isMatchAvailableForAnalysis(row)) {
+                if (this.rowHasCurrentGuruSignatureInColor(row) && (this.getCurrentColorAnalysis(row).trim()==='')) {
                     return i;
                 }
             }
@@ -682,7 +681,7 @@ export class GuruAnalysisInterface {
         // Look for discrepancies that belong to current guru (have current guru's signature)
         for (let i = startFromIndex; i < this.allRows.length; i++) {
             const row = this.allRows[i];
-            if (this.rowHasCurrentGuruSignature(row) && this.rowHasDiscrepancy(row)){
+            if (this.rowHasMyDiscrepancy(row)){
                 return i
             }
         }
@@ -691,7 +690,7 @@ export class GuruAnalysisInterface {
         if (startFromIndex > 0) {
             for (let i = 0; i < startFromIndex; i++) {
                 const row = this.allRows[i];
-                if (this.rowHasCurrentGuruSignature(row) && this.rowHasDiscrepancy(row)){
+                if (this.rowHasMyDiscrepancy(row)){
                     return i
                 }
             }
@@ -2723,7 +2722,8 @@ export class GuruAnalysisInterface {
 
     hasCurrentColorResult(row) {
         const currentAnalysis = this.getCurrentColorAnalysis(row);
-        return currentAnalysis && currentAnalysis.toString().trim() !== '';
+        console.log(currentAnalysis)
+        return currentAnalysis && (currentAnalysis.toString().trim() !== '');
     }
 
     rowHasDiscrepancy(row) {
@@ -2737,6 +2737,10 @@ export class GuruAnalysisInterface {
             .filter(Boolean);
 
         return normalizedAnalyses.length >= 2 && new Set(normalizedAnalyses).size > 1;
+    }
+
+    rowHasMyDiscrepancy(row) {
+        return this.rowHasDiscrepancy(row) && this.rowHasCurrentGuruSignature(row) && this.hasCurrentColorResult(row);
     }
 
     getGuruAnalysisValues(row) {
