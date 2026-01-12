@@ -2166,8 +2166,7 @@ export class GuruAnalysisInterface {
             mirrorMatchBtn.classList.add('inverse-error');
         }
         
-        // Update tooltip to include inverse result info
-        mirrorMatchBtn.title = `Jump to mirror match\nInverse result: ${this.formatAnalysisValue(inverseOutcome)}`;
+        mirrorMatchBtn.title = `Jump to mirror match`;
     }
 
     async skipToMirrorMatch() {
