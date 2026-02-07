@@ -2863,6 +2863,9 @@ export class GuruAnalysisInterface {
         // Generate link to this match (without guru color parameter)
         const url = new URL(window.location.href);
         url.searchParams.delete('guru'); // Remove guru color from URL
+        const trueURL = this.currentData.metadata?.mainSheetLink || 'Fail'; 
+        const trueID = trueURL.match(/[-\w]{25,}/); // Get 25 digit ID from sheet link 
+        if(trueID) url.searchParams.set('pod',trueID); // If sheet has mainSheetLink metadata, link to that sheet instead
         const matchLink = url.toString();
         
         // Build correction string (e.g., "W/T->L")
