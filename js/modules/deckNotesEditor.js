@@ -368,8 +368,19 @@ export class DeckNotesEditor {
     }
 
     async unhideGuruSheets() {
+        // Get sheet metadata and custom metadata to find required sheets (same logic as getSheetData)
+        const metadata = await this.sheetsAPI.getSheetMetadata(this.spreadsheetID);
+        const metadataSheet = metadata.sheets.find(sheet => sheet.title.toLowerCase().includes('metadata'));
+        const customMetadata = metadataSheet ? await this.sheetsAPI.getCustomMetadata(this.spreadsheetID, metadataSheet) : {};
+        
+        // Use the same requiredSheetNames logic as getSheetData
+        const requiredSheetNames = customMetadata.dataSheets || ['Deck Notes', 'Red Gurus', 'Blue Gurus', 'Green Gurus'];
+        const guruSheetNames = requiredSheetNames.filter(name => 
+            !name.toLowerCase().includes('deck notes')
+        );
+        
         // Unhide the Guru sheets in the spreadsheet and move to the analysis interface
-        await this.sheetsAPI.unhideGuruSheets(this.spreadsheetID);
+        await this.sheetsAPI.unhideGuruSheets(this.spreadsheetID, guruSheetNames);
         this.close();
 
         const sheetData = await this.sheetsAPI.getSheetData(this.spreadsheetID);
