@@ -309,7 +309,7 @@ export class GoogleSheetsAPI {
      * Fetches the data from the Deck Notes sheet for the given spreadsheet ID.
      * Returns an object with title, sheetId, values, range, majorDimension, and columnMapping.
      */
-    async getDeckNotes(spreadsheetId, deckNotesSheet, range = 'A:D') {
+    async getDeckNotes(spreadsheetId, deckNotesSheet, range = 'A:E') {
         try {
             const response = await gapi.client.sheets.spreadsheets.values.get({
                 spreadsheetId: spreadsheetId,

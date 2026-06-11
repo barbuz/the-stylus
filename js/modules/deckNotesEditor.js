@@ -30,8 +30,16 @@ export class DeckNotesEditor {
             this.uiController.showStatus('No deck notes found. Check the spreadsheet.', 'error');
             return;
         }
+        console.log(notesData)
         const headers = notes[0] || [];
+        const headersClean = headers.map(header => header.toLowerCase().trim().replace(/\s+/g, '-'));
         const numCols = headers.length;
+        var fixed = headers.findIndex(header => header.toLowerCase().trim() === 'signature');
+        if (fixed === -1) {
+            fixed = [];
+        } else {
+            fixed = [fixed];
+        }
 
         // Check if we need hover preview for cards
         const pointerType = this.uiController.getPointerType();
@@ -57,8 +65,8 @@ export class DeckNotesEditor {
                 <table id="deck-notes-table" class="deck-notes-table">
                     <thead>
                         <tr>
-                            ${headers.map((header, index) => `
-                                <th data-col="${index}">${header}</th>
+                            ${headersClean.map((header, index) => `
+                                <th header="${header}">${headers[index]}</th>
                             `).join('')}
                         </tr>
                     </thead>
@@ -80,9 +88,12 @@ export class DeckNotesEditor {
                             return `<tr>` +
                                 `<td class="deck-cards-list" data-row="${rowIndex + 1}" data-col="0"><ul>${paddedRow[0]}</ul></td>` +
                                 // row-col Index here are offset by 1, so add 1 to get the real index in the data
-                                paddedRow.slice(1).map((cell, colIndex) => `
-                                    <td class="editable" contenteditable="true" data-row="${rowIndex + 1}" data-col="${colIndex+1}">${cell}</td>
-                                `).join('') +
+                                paddedRow.slice(1).map((cell, colIndex) => {
+                                    const header = headersClean[colIndex+1];
+                                    const editable = header !== 'signature';
+                                    const classList = editable ? 'editable' : '';
+                                    return `<td class="${classList}" contenteditable="${editable}" data-row="${rowIndex + 1}" data-col="${colIndex+1}" header="${header}">${cell}</td>`;
+                                }).join('') +
                                 `</tr>`;
                         }).join('')}
                     </tbody>
@@ -122,12 +133,32 @@ export class DeckNotesEditor {
                         valueType: 'auto-detect',
                     }]
                 };
-
                 const result = await this.sheetsAPI.checkedUpdateSheetData(this.spreadsheetID, updates);
                 if (!result || result.skippedCells > 0) {
                     this.uiController.showStatus('Cell update failed, content may have been changed by someone else.', 'info');
                 } else {
                     this.notesData.values[row][col] = content; // Update local notes data
+                    if (headers[col] == 'Goldfish Clock' && headers.includes('Signature')) {
+                        // Update the signature in the spreadsheet
+                        const signatureCol = headers.indexOf('Signature');
+                        const signature = this.analysisInterface.guruSignature;
+                        const signatureUpdates = {
+                            updates: [{
+                                sheetId: this.notesData.sheetId,
+                                row: parseInt(row) + 1, // +1 because sheets are 1-indexed
+                                col: signatureCol + 1, // +1 because sheets are 1-indexed
+                                value: signature,
+                                valueType: 'string',
+                            }]
+                        };
+                        this.sheetsAPI.updateSheetData(this.spreadsheetID, signatureUpdates); // Don't wait for this to finish
+                        this.notesData.values[row][signatureCol] = signature;
+                        // Update the signature in the UI
+                        const signatureCell = deckNotesTable.querySelector(`td[data-row="${row}"][data-col="${signatureCol}"]`);
+                        if (signatureCell) {
+                            signatureCell.textContent = signature;
+                        }
+                    }
                 }
             };
 
