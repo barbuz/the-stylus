@@ -375,7 +375,9 @@ export class GuruAnalysisInterface {
         this.allRows = [];
 
         // Process deck notes for reference
-        this.deckNotesMap = this.processDeckNotes(sheetData);
+        const deckNotesResult = this.processDeckNotes(sheetData);
+        this.deckNotesMap = deckNotesResult.deckNotesMap;
+        this.deckNotesColumnMap = deckNotesResult.columnMap;
         console.log('Loaded deck notes:', this.deckNotesMap.size, 'entries');
 
         // Process all sheets and collect rows that need analysis
@@ -432,8 +434,17 @@ export class GuruAnalysisInterface {
         
         const decklistsColIndex = this.findColumnIndex(headerRow, ['Decklists', 'Decklist']);
         const goldfishClockColIndex = this.findColumnIndex(headerRow, ['Goldfish Clock', 'Clock']);
+        const goldfishSignatureColIndex = this.findColumnIndex(headerRow, ['Goldfish Signature', 'Signature']);
         const notesColIndex = this.findColumnIndex(headerRow, ['Notes']);
         const additionalNotesColIndex = this.findColumnIndex(headerRow, ['Additional Notes', 'Add Notes']);
+
+        const columnMap = {
+            decklists: decklistsColIndex,
+            goldfishClock: goldfishClockColIndex,
+            goldfishSignature: goldfishSignatureColIndex,
+            notes: notesColIndex,
+            additionalNotes: additionalNotesColIndex
+        };
         
         if (decklistsColIndex === -1) {
             console.log('Decklists column not found');
@@ -443,22 +454,26 @@ export class GuruAnalysisInterface {
         // Process each row
         for (let i = 1; i < deckNotesSheet.values.length; i++) {
             const row = deckNotesSheet.values[i];
-            const decklist = row[decklistsColIndex];
+            const decklist = row[columnMap.decklists];
             
             if (decklist && decklist.trim()) {
                 const deckInfo = {row: i};
                 
-                if (goldfishClockColIndex !== -1 && row[goldfishClockColIndex]) {
-                    deckInfo.goldfishClock = row[goldfishClockColIndex].toString().trim();
+                if (columnMap.goldfishClock !== -1 && row[columnMap.goldfishClock]) {
+                    deckInfo.goldfishClock = row[columnMap.goldfishClock].toString().trim();
                 }
                 
-                if (notesColIndex !== -1 && row[notesColIndex]) {
-                    const notes = row[notesColIndex].toString().trim();
+                if (columnMap.goldfishSignature !== -1 && row[columnMap.goldfishSignature]) {
+                    deckInfo.goldfishSignature = row[columnMap.goldfishSignature].toString().trim();
+                }
+                
+                if (columnMap.notes !== -1 && row[columnMap.notes]) {
+                    const notes = row[columnMap.notes].toString().trim();
                     if (notes) deckInfo.notes = notes;
                 }
                 
-                if (additionalNotesColIndex !== -1 && row[additionalNotesColIndex]) {
-                    const additionalNotes = row[additionalNotesColIndex].toString().trim();
+                if (columnMap.additionalNotes !== -1 && row[columnMap.additionalNotes]) {
+                    const additionalNotes = row[columnMap.additionalNotes].toString().trim();
                     if (additionalNotes) deckInfo.additionalNotes = additionalNotes;
                 }
                 
@@ -469,7 +484,10 @@ export class GuruAnalysisInterface {
         }
         
         console.log('Total deck notes processed:', deckNotesMap.size);
-        return deckNotesMap;
+        return {
+            deckNotesMap:deckNotesMap,
+            columnMap:columnMap
+        };
     }
 
     processSheet(sheet, sheetIndex) {
@@ -2442,7 +2460,7 @@ export class GuruAnalysisInterface {
                     // Find row and column indices in the Deck Notes sheet
                     const deckInfo = this.deckNotesMap.get(deckString) || {};
                     const row = deckInfo.row;
-                    const colMap = { clock: 1, notes: 2, additionalNotes: 3 };
+                    const colMap = this.deckNotesColumnMap;
                     const col = colMap[type];
                     // Find the "Deck Notes" sheet
                     const deckNotesSheet = this.currentData.sheets.find(sheet => 
@@ -2462,9 +2480,23 @@ export class GuruAnalysisInterface {
                     const result = await this.sheetsAPI.checkedUpdateSheetData(this.currentData.sheetId, updates);
                     
                     if (result && result.skippedCells == 0) {
-                        if (type === 'clock') deckInfo.goldfishClock = newValue;
-                        else if (type === 'notes') deckInfo.notes = newValue;
+                        if (type === 'notes') deckInfo.notes = newValue;
                         else if (type === 'additionalNotes') deckInfo.additionalNotes = newValue;
+                        else if (type === 'clock'){
+                            deckInfo.goldfishClock = newValue;
+                            if (colMap.goldfishSignature>-1) {
+                                // Automatically sign this clock with the guru signature
+                                const updates = [{
+                                    sheetId: deckNotesSheet.sheetId,
+                                    row: row + 1, // +1 because sheets are 1-indexed
+                                    col: colMap.goldfishSignature + 1, // +1 because sheets are 1-indexed
+                                    value: this.guruSignature,
+                                    valueType: 'string',
+                                }]
+                                this.sheetsAPI.updateSheetData(this.currentData.sheetId, { updates });
+                                deckInfo.goldfishSignature = this.guruSignature;
+                            }
+                        }
                         this.deckNotesMap.set(deckString, { ...deckInfo });
                         const notesValueSpan = span.querySelector('.notes-value');
                         if (notesValueSpan) {

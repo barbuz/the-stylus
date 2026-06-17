@@ -2362,22 +2362,26 @@ section h2, .login-section h2 {
   text-align: left;
 }
 
-.deck-notes-table [data-col="0"] { /* Decklists */
+.deck-notes-table [header="decklists"] { /* Decklists */
   width: 15em;
 }
 
-.deck-notes-table [data-col="1"] { /* Clock */
+.deck-notes-table [header="goldfish-clock"] { /* Clock */
   text-align: center;
   font-weight: bold;
   width: 6em;
 }
 
-.deck-notes-table [data-col="2"] { /* Notes */
+.deck-notes-table [header="notes"] { /* Notes */
   min-width: 30em;
 }
 
-.deck-notes-table [data-col="3"] { /* Additional Notes */
+.deck-notes-table [header="additional-notes"] { /* Additional Notes */
   width: 20em;
+}
+
+.deck-notes-table [header="signature"] {
+  width: min-content;
 }
 
 .deck-notes-table .editable:hover {
