@@ -91,7 +91,7 @@ export class DeckNotesEditor {
                                 paddedRow.slice(1).map((cell, colIndex) => {
                                     const header = headersClean[colIndex+1];
                                     const editable = header !== 'signature';
-                                    const classList = editable ? 'editable' : '';
+                                    const classList = editable ? 'editable pulled' : 'pulled';
                                     return `<td class="${classList}" contenteditable="${editable}" data-row="${rowIndex + 1}" data-col="${colIndex+1}" header="${header}">${cell}</td>`;
                                 }).join('') +
                                 `</tr>`;
@@ -151,7 +151,7 @@ export class DeckNotesEditor {
                                 valueType: 'string',
                             }]
                         };
-                        this.sheetsAPI.updateSheetData(this.spreadsheetID, signatureUpdates); // Don't wait for this to finish
+                        await this.sheetsAPI.updateSheetData(this.spreadsheetID, signatureUpdates);
                         this.notesData.values[row][signatureCol] = signature;
                         // Update the signature in the UI
                         const signatureCell = deckNotesTable.querySelector(`td[data-row="${row}"][data-col="${signatureCol}"]`);
@@ -331,8 +331,8 @@ export class DeckNotesEditor {
 
         const notes = notesData.values || [];
 
-        // Loop through editable cells and update their content
-        deckNotesTable.querySelectorAll('.editable').forEach((cell) => {
+        // Loop through pulled data cells and update their content
+        deckNotesTable.querySelectorAll('.pulled').forEach((cell) => {
             const row = cell.dataset.row;
             const col = cell.dataset.col;
             // check if cell content has changed
