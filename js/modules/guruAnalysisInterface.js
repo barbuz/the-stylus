@@ -26,9 +26,6 @@ export class GuruAnalysisInterface {
         this.blueSignatureColIndex = -1;
         this.greenSignatureColIndex = -1;
         this.bindEvents();
-        // Handle window resize for mobile/desktop layout changes
-        this.handleResize = this.handleResize.bind(this);
-        window.addEventListener('resize', this.handleResize);
     }
 
     reset() {
@@ -161,16 +158,6 @@ export class GuruAnalysisInterface {
                 this.closeCreateThreadModal();
             }
         });
-    }
-
-    handleResize() {
-        // Re-position deck info when window is resized (e.g., device rotation)
-        if (this.allRows.length > 0 && this.currentRowIndex < this.allRows.length) {
-            const currentRow = this.allRows[this.currentRowIndex];
-            // Re-display deck info for both players to update positioning
-            this.displayDeckInfo('player1', currentRow.player1);
-            this.displayDeckInfo('player2', currentRow.player2);
-        }
     }
 
     bindGuruColorSelector() {
