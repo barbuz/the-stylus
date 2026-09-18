@@ -54,7 +54,9 @@ the-stylus/
 │   ├── e2e/                    # Playwright specs + in-browser Google/Scryfall stubs
 │   └── fixtures/               # Shared sheet-data fixtures and fake gapi
 ├── playwright.config.js        # Playwright config (dev-only; serves files statically)
-├── .github/copilot-instructions.md
+├── .github/
+│   ├── workflows/tests.yml     # CI: runs unit + e2e on push/PR to main
+│   └── copilot-instructions.md
 └── package.json                # Metadata + dev-only test scripts (no runtime deps)
 ```
 
@@ -70,7 +72,8 @@ python -m http.server 8000   # then open http://localhost:8000
 - Modules use ES6 `import`/`export`; follow the import chain to understand dependencies. Import paths are **case-sensitive**.
 - Google APIs are loaded from CDN, so the app needs network access to fully run.
 - Verify syntax without a build tool: `node -c <file>` (no ESLint config exists; `node --check` is equivalent).
-- There is no CI workflow. Do not add one without asking.
+- There is a CI workflow at `.github/workflows/tests.yml` that runs both suites
+  on pushes and pull requests to `main`. Ask before adding further workflows.
 
 ### Testing
 
@@ -110,6 +113,22 @@ Notes:
   range index 0) so parsing paths stay honest.
 - Some tests intentionally document current quirks rather than desired behaviour
   (look for the "Characterization:" comments). Update those deliberately.
+
+### CI billing
+
+This repository is public, so standard GitHub-hosted runners are free and
+unlimited for it; only the minutes cap applies to private repos. Storage is the
+part that is *not* unlimited, even here. Two consequences for the test workflow:
+
+- Artifacts share a pooled allowance with GitHub Packages and are billed by
+  GB-hour. `test-results/` (Playwright traces) grows quickly, so the workflow
+  deliberately does not upload it. If you ever add an upload step, set
+  `retention-days` low and `if-no-files-found: ignore`.
+- Avoid larger runners. They are always charged, even for public repositories or
+  when plan quota is unused.
+
+Keep `runs-on: ubuntu-latest` (a standard runner) and the browser cache stays
+under the separate 10 GB-per-repository cache allowance.
 
 ### Updating the service worker cache
 

@@ -1,0 +1,44 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Least privilege: the tests only need to read the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Chromium only, matching playwright.config.js. --with-deps pulls the
+      # shared libraries the browser needs on a bare runner.
+      - run: npx playwright install --with-deps chromium
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+      # Deliberately no artifact upload: test-results/ and playwright-report/
+      # are large and would accrue Actions storage beyond the free allowance.
+      # Traces are still written to the runner for live debugging.
