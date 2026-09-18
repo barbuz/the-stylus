@@ -49,8 +49,13 @@ the-stylus/
 ├── sw.js                       # Service worker: APP_VERSION, precache list, Scryfall cache
 ├── site.webmanifest            # PWA manifest
 ├── favicons/ images/           # Static assets
+├── tests/
+│   ├── unit/                   # node:test suites (node --test)
+│   ├── e2e/                    # Playwright specs + in-browser Google/Scryfall stubs
+│   └── fixtures/               # Shared sheet-data fixtures and fake gapi
+├── playwright.config.js        # Playwright config (dev-only; serves files statically)
 ├── .github/copilot-instructions.md
-└── package.json                # Metadata only — no real scripts/dependencies
+└── package.json                # Metadata + dev-only test scripts (no runtime deps)
 ```
 
 ## Development Workflow
@@ -65,7 +70,46 @@ python -m http.server 8000   # then open http://localhost:8000
 - Modules use ES6 `import`/`export`; follow the import chain to understand dependencies. Import paths are **case-sensitive**.
 - Google APIs are loaded from CDN, so the app needs network access to fully run.
 - Verify syntax without a build tool: `node -c <file>` (no ESLint config exists; `node --check` is equivalent).
-- There is no test suite, no CI workflow, and no test runner — do not invent one without asking.
+- There is no CI workflow. Do not add one without asking.
+
+### Testing
+
+The app has no backend and the public app ships zero dependencies, so tests must
+run without Google credentials, without network access, and without adding
+anything to the shipped bundle. Playwright is a **devDependency only** — never
+add a runtime dependency or reference test files from `index.html`/`sw.js`.
+
+```bash
+npm install                    # installs Playwright (dev only)
+npm run test:e2e:install       # one-time Chromium download
+npm test                       # unit + e2e
+npm run test:unit              # node:test only (fast, no browser)
+npm run test:e2e               # Playwright only
+```
+
+**Unit tests** (`tests/unit/`, built-in `node:test`, no dependencies):
+- `js/utils/*` is pure and imported directly.
+- `GuruAnalysisInterface` logic is tested via `Object.create(GuruAnalysisInterface.prototype)`
+  and an explicit fake `this`. The constructor calls `bindEvents()` and needs a
+  DOM, so do not `new` it in unit tests.
+- `GoogleSheetsAPI` is tested against a fake global `gapi` (`tests/fixtures/fakeGapi.js`)
+  that records requests. Tests assert on the requests and the transformations.
+  Change the module to read `gapi` lazily; do not capture it at import time.
+
+**E2E tests** (`tests/e2e/`): Playwright drives the real app in Chromium over
+`python -m http.server`. `tests/e2e/stubs.js` installs an in-browser model of a
+spreadsheet plus stubs for `gapi`, Google Identity Services, Drive appData and
+Scryfall images. The Google CDN scripts and OpenID endpoints are blocked by
+`page.route`. Tests assert on real cells written by the app, which is what
+catches off-by-one/column-mapping regressions.
+
+Notes:
+- The stub disables `navigator.serviceWorker`; otherwise its `controllerchange`
+  handler reloads the page mid-test.
+- Keep fixtures shaped like the real API payloads (ragged rows, header row at
+  range index 0) so parsing paths stay honest.
+- Some tests intentionally document current quirks rather than desired behaviour
+  (look for the "Characterization:" comments). Update those deliberately.
 
 ### Updating the service worker cache
 
@@ -83,7 +127,7 @@ When you add, remove, or rename a file under `js/`, `styles/`, `images/`, or `fa
 - **DOM access:** use helpers from `js/utils/domUtils.js` (`getElement`, `waitForElement`, `addEventListenerSafe`) rather than direct `document.getElementById`, so missing elements degrade gracefully.
 - **Event handling:** register UI events in `uiController.js` / the owning module's setup method rather than inline `onclick` handlers.
 - **Config:** `js/config.js` holds the public OAuth client ID and storage keys. Do not move secrets here; `public/js/config.local.js` is gitignored for local overrides.
-- **No new dependencies:** the project deliberately loads everything from CDNs and ships no bundler. Confirm with the user before adding a package.
+- **No new dependencies:** the project deliberately loads everything from CDNs and ships no bundler. Confirm with the user before adding a package. Playwright is the one agreed exception, and it is dev-only: it must never be imported by app code or added to `sw.js`/`index.html`.
 - **Commits:** short imperative subjects, often `<Area>: <change>` (e.g. `Fix next button not going to current guru's matches first`).
 
 ## Keeping Docs in Sync

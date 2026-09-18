@@ -19,3 +19,9 @@ public/js/config.local.js
 
 # Logs
 *.log
+
+# Test tooling (dev-only, never shipped)
+node_modules/
+test-results/
+playwright-report/
+.playwright/
