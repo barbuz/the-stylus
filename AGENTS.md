@@ -118,14 +118,22 @@ Notes:
 
 This repository is public, so standard GitHub-hosted runners are free and
 unlimited for it; only the minutes cap applies to private repos. Storage is the
-part that is *not* unlimited, even here. Two consequences for the test workflow:
+part that is *not* unlimited, even here. Consequences for the test workflow:
 
+- Traces upload **only on failure** (`if: failure()`), with `retention-days: 7`.
+  `trace: 'retain-on-failure'` means a green run writes no trace at all, and a
+  failing test is ~500 KB, so this stays far inside the 500 MB GitHub Free
+  allowance. Do not switch to uploading the HTML report on every run: it is
+  ~4 MB per run and would accumulate.
 - Artifacts share a pooled allowance with GitHub Packages and are billed by
-  GB-hour. `test-results/` (Playwright traces) grows quickly, so the workflow
-  deliberately does not upload it. If you ever add an upload step, set
-  `retention-days` low and `if-no-files-found: ignore`.
+  GB-hour. Keep `retention-days` low on any new upload step and set
+  `if-no-files-found: ignore`.
 - Avoid larger runners. They are always charged, even for public repositories or
   when plan quota is unused.
+
+Traces capture request and response bodies verbatim. That is fine while the E2E
+suite runs against synthetic stubs, but pointing it at a real spreadsheet would
+put real match data in a downloadable artifact.
 
 Keep `runs-on: ubuntu-latest` (a standard runner) and the browser cache stays
 under the separate 10 GB-per-repository cache allowance.
