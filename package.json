@@ -7,7 +7,13 @@
   "scripts": {
     "dev": "echo 'Open index.html in your browser'",
     "build": "echo 'No build required - static HTML/CSS/JS'",
-    "test": "echo 'Test script placeholder'"
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "node --test \"tests/unit/*.test.js\"",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
   },
   "keywords": [
     "3cardblind",

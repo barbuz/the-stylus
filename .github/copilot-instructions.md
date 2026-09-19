@@ -53,6 +53,11 @@ Before scoring a match the guru must claim it by entering their guru signature. 
 │       ├── domUtils.js
 │       ├── podUtils.js
 │       └── urlUtils.js
+├── tests/                   # Dev-only test suites (see AGENTS.md)
+│   ├── unit/                # node:test specs
+│   ├── e2e/                 # Playwright specs + Google/Scryfall stubs
+│   └── fixtures/            # Shared fixtures and fake gapi
+├── playwright.config.js     # Dev-only test config
 └── styles/
     └── main.css            # All application styles
 ```

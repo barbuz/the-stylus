@@ -1,0 +1,55 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Least privilege: the tests only need to read the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Chromium only, matching playwright.config.js. --with-deps pulls the
+      # shared libraries the browser needs on a bare runner.
+      - run: npx playwright install --with-deps chromium
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+      # Traces only exist when a test fails (`trace: 'retain-on-failure'`), so
+      # this typically uploads nothing. The runner is destroyed at the end of
+      # the job, so uploading is the only way to retrieve the network log and
+      # screencast afterwards; otherwise only the list reporter's console
+      # output survives. Short retention keeps storage well inside the free
+      # allowance.
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore
