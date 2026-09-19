@@ -114,6 +114,33 @@ Notes:
 - Some tests intentionally document current quirks rather than desired behaviour
   (look for the "Characterization:" comments). Update those deliberately.
 
+**Real-pod fixtures** (`tests/fixtures/realPod.js`): a trimmed but structurally
+faithful excerpt of a real exported pod workbook, used by `tests/unit/realPod.test.js`
+and `tests/e2e/realPod.spec.js`. Hand-written fixtures encode guesses about the
+sheet layout; these encode what a live sheet actually contains, and that is what
+catches schema drift. Keep them in sync if the sheet format changes. Facts they
+pin down, each of which a synthetic fixture had wrong or absent:
+- Guru sheets are 13 columns wide (A:M). The app reads A:C (base, Red only) and
+  E:F (per colour). Columns G:I mirror the other gurus; K/L are Inverse Check
+  and Inverse ID#; M is a Discord thread link.
+- Headers are prose ("Player 1 (On the Play)", "ID#"), matched by substring.
+  Do not shorten them.
+- The metadata sheet is **headerless**: row 1 is already data. The app's
+  "skip header row" comment therefore never fires on real data, which is why
+  the spurious `variableName` key seen with a headered fixture does not appear.
+- Deck Notes header order is `Decklists | Goldfish Clock | Signature | Notes |
+  Additional Notes`. "Signature" here is the *goldfish* signature; the app
+  resolves it through its alias list.
+- The real pod is **finished** — every row has three agreeing analyses. The
+  completion path and the "nothing to write" path are only reachable with this
+  fixture. To exercise scoring, blank a cell deliberately (see
+  `blankFirstAnalysis` in `tests/e2e/realPod.spec.js`).
+- Cells arrive as FORMATTED_VALUE strings ("1", "0.5", "0"), never numbers. The
+  exported .xlsx stores floats; that is a file-format artefact, not the wire
+  format the app sees.
+- Decklists are pipe-separated and rendered as separate card lines; the pipes
+  are not shown to the user.
+
 ### CI billing
 
 This repository is public, so standard GitHub-hosted runners are free and

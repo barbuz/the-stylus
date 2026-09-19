@@ -1,3 +1,7 @@
+import {
+    REAL_POD_SHEET_IDS, realPodGuruCells, realDeckNotesRows, realMetadataRows
+} from '../fixtures/realPod.js';
+
 /**
  * Browser-side stub for the external services The Stylus depends on.
  *
@@ -278,6 +282,32 @@ export function sampleSpreadsheet() {
             { title: 'Red Gurus', sheetId: 111, cells: cellsFromRows(redRows) },
             { title: 'Blue Gurus', sheetId: 222, cells: cellsFromRows(blueRows) },
             { title: 'Green Gurus', sheetId: 333, cells: cellsFromRows(greenRows) }
+        ]
+    });
+}
+
+/**
+ * The real pod, seeded at its true 13-column width.
+ *
+ * Unlike sampleSpreadsheet(), every guru sheet here is A:M, matching the live
+ * workbook. The app only ever reads A:C and E:F, so the extra columns exist to
+ * prove that reading a genuine sheet works and to make any future range drift
+ * visible. The Deck Notes header is the real one ("Signature", not "Goldfish
+ * Signature"), and the metadata sheet is headerless.
+ */
+export function realPodSpreadsheet() {
+    return makeSpreadsheet({
+        title: 'Novice I',
+        sheets: [
+            {
+                title: 'Deck Notes',
+                sheetId: REAL_POD_SHEET_IDS.deckNotes,
+                cells: cellsFromRows(realDeckNotesRows())
+            },
+            { title: 'Red Gurus', sheetId: REAL_POD_SHEET_IDS.red, cells: realPodGuruCells('red') },
+            { title: 'Blue Gurus', sheetId: REAL_POD_SHEET_IDS.blue, cells: realPodGuruCells('blue') },
+            { title: 'Green Gurus', sheetId: REAL_POD_SHEET_IDS.green, cells: realPodGuruCells('green') },
+            { title: 'metadata', sheetId: REAL_POD_SHEET_IDS.metadata, hidden: true, cells: cellsFromRows(realMetadataRows()) }
         ]
     });
 }
