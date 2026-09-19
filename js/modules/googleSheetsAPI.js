@@ -287,11 +287,15 @@ export class GoogleSheetsAPI {
 
     getColumnMapping(sheetTitle) {
         if (sheetTitle.toLowerCase().includes('deck notes')) {
+            // Real Deck Notes sheets have five columns:
+            // Decklists | Goldfish Clock | Signature | Notes | Additional Notes.
+            // "Signature" is the goldfish signature, not a guru signature.
             return {
                 decklists: 0,      // Column A
                 clock: 1,          // Column B
-                notes: 2,          // Column C
-                additionalNotes: 3 // Column D
+                signature: 2,      // Column C
+                notes: 3,          // Column D
+                additionalNotes: 4 // Column E
             };
         } else {
             // Guru sheets (Red Gurus, Blue Gurus, Green Gurus)

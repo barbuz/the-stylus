@@ -14,10 +14,12 @@ function withFakeGapi(options = {}) {
 
 // --- Column mappings ---------------------------------------------------------
 
-test('getColumnMapping knows deck notes layout', () => {
+test('getColumnMapping knows the real five-column deck notes layout', () => {
     const api = new GoogleSheetsAPI(fakeAuthManager());
+    // Real sheets carry a Signature column between the clock and the notes;
+    // "Signature" here is the goldfish signature.
     assert.deepEqual(api.getColumnMapping('Deck Notes'), {
-        decklists: 0, clock: 1, notes: 2, additionalNotes: 3
+        decklists: 0, clock: 1, signature: 2, notes: 3, additionalNotes: 4
     });
 });
 
@@ -566,7 +568,9 @@ test('getDeckNotes attaches the deck notes column mapping', async () => {
         const notes = await api.getDeckNotes(SHEET_ID, { title: 'Deck Notes', sheetId: 44 });
 
         assert.equal(notes.title, 'Deck Notes');
-        assert.deepEqual(notes.columnMapping, { decklists: 0, clock: 1, notes: 2, additionalNotes: 3 });
+        assert.deepEqual(notes.columnMapping, {
+            decklists: 0, clock: 1, signature: 2, notes: 3, additionalNotes: 4
+        });
         assert.equal(notes.values.length, 2);
     } finally {
         restore();
