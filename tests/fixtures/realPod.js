@@ -27,6 +27,13 @@
  *  5. Deck Notes header order is Decklists | Goldfish Clock | Signature |
  *     Notes | Additional Notes, and "Signature" (col C) is the *goldfish*
  *     signature. Notes are frequently blank, Additional Notes almost always so.
+ *  6. D (Outcome) and K (Inverse Check) are formula-derived in the real sheet.
+ *     The app never reads them — it fetches only A:C and E:F — but tests that
+ *     blank an analysis must clear them too, or they seed a state the real
+ *     sheet cannot produce. See clearAnalysisLikeRealSheet() and
+ *     REAL_DERIVED_COLUMNS. The K values here are *modelled* as
+ *     (1 - mirror outcome) from row 1's real value; only row 1's K was
+ *     observed in the export, and the app ignores K regardless.
  *
  * Swapping guru sheets between rows also encodes the real colour convention:
  * each sheet's E/F is its own colour, and columns G:I mirror the other two.
@@ -110,6 +117,41 @@ const REAL_PARTNERS = {
 };
 
 /**
+ * Columns of a real guru sheet that a spreadsheet formula derives from the
+ * analysis cells, rather than a human typing them.
+ *
+ * D (Outcome) and K (Inverse Check) are computed from E/G/I. The app never
+ * reads either — it fetches only A1:C1000 and E1:F1000 and recomputes the
+ * outcome locally — but a *test* that blanks an analysis must blank these too
+ * or it seeds a row the real sheet cannot produce (an empty analysis beside a
+ * populated Outcome), which would misrepresent what a live pod looks like.
+ *
+ * L (Inverse ID#) is a hand-entered row reference, not derived, so it stays
+ * put when an analysis is cleared.
+ */
+export const REAL_DERIVED_COLUMNS = { outcome: 4, inverseCheck: 11 };
+
+/**
+ * Blank a guru's analysis on a row the way a live sheet would.
+ *
+ * The real workbook computes D (Outcome) and K (Inverse Check) from the
+ * analysis cells, so clearing an analysis clears its dependents through
+ * recalculation. This stub does not evaluate formulas, so a test that only
+ * deletes E leaves `Outcome = "1"` sitting beside an empty analysis — a state
+ * the real sheet never shows and which could mask a bug in how the app decides
+ * a row is scoreable. Clear the derived columns alongside the analysis.
+ *
+ * @param {object} sheet a sheet from {@link realPodSpreadsheet}
+ * @param {number} row 1-based sheet row
+ * @param {number} analysisCol 1-based column holding the analysis (5 = E)
+ */
+export function clearAnalysisLikeRealSheet(sheet, row, analysisCol) {
+    delete sheet.cells[`${row}:${analysisCol}`];
+    delete sheet.cells[`${row}:${REAL_DERIVED_COLUMNS.outcome}`];
+    delete sheet.cells[`${row}:${REAL_DERIVED_COLUMNS.inverseCheck}`];
+}
+
+/**
  * Cells for one guru sheet in the real 13-column layout (1-based coords).
  *
  * @param {'red'|'blue'|'green'} colour which sheet's own readings to use in E/F
@@ -130,6 +172,13 @@ export function realPodGuruCells(colour, stringify = String) {
     const partners = REAL_PARTNERS[colour];
     REAL_MATCH_ROWS.forEach((match, index) => {
         const row = index + 2;
+        // K (Inverse Check) is the outcome the mirror row is expected to carry,
+        // i.e. 1 - this row's outcome. On row 1 that is 1 - 0 = 1, matching the
+        // real sheet. It is an independent check, which is why the real sheet
+        // can show a mismatch (a row with 0.5 analyses but a 0.0 check).
+        const mirror = REAL_MATCH_ROWS.find(m => m.id === match.inverse);
+        const inverseCheck = mirror ? String(1 - parseFloat(mirror.outcome)) : '';
+
         put(row, 1, match.id);
         put(row, 2, match.player1);
         put(row, 3, match.player2);
@@ -141,13 +190,27 @@ export function realPodGuruCells(colour, stringify = String) {
         put(row, 8, partners[0]);
         put(row, 9, readings[index][0]);
         put(row, 10, partners[1]);
-        put(row, 11, match.outcome);
+        put(row, 11, inverseCheck);
         put(row, 12, match.inverse);
     });
 
     return cells;
 }
 
+/**
+ * Blank a guru's analysis on a row the way a live sheet would.
+ *
+ * The real workbook computes D (Outcome) and K (Inverse Check) from the
+ * analysis cells, so clearing an analysis clears its dependents through
+ * recalculation. This stub does not evaluate formulas, so a test that only
+ * deletes E leaves `Outcome = "1"` sitting beside an empty analysis — a state
+ * the real sheet never shows and which could mask a bug in how the app decides
+ * a row is scoreable. Clear the derived columns alongside the analysis.
+ *
+ * @param {object} sheet a sheet from {@link realPodSpreadsheet}
+ * @param {number} row 1-based sheet row
+ * @param {number} analysisCol 1-based column holding the analysis (5 = E)
+ */
 /** Cells for the real Deck Notes sheet. Columns A:E as in the workbook. */
 export function realDeckNotesRows() {
     return [

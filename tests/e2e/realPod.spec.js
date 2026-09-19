@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 import { installStubs, realPodSpreadsheet } from './stubs.js';
-import { REAL_MATCH_ROWS, REAL_POD_SHEET_IDS } from '../fixtures/realPod.js';
+import { REAL_MATCH_ROWS, REAL_POD_SHEET_IDS, clearAnalysisLikeRealSheet } from '../fixtures/realPod.js';
 
 /**
  * End-to-end coverage against the real pod layout rather than the compact
@@ -47,9 +47,11 @@ async function bootRealPod(page, { signature = PRIMARY_GURU, blankFirstAnalysis 
     const spreadsheet = realPodSpreadsheet();
     if (blankFirstAnalysis) {
         const red = spreadsheet.sheets.find(s => s.title === 'Red Gurus');
-        // Match 1 is spreadsheet row 2 (row 1 is the header); column 5 is E,
-        // "Guru Analysis". Deleting it makes the row scoreable again.
-        delete red.cells['2:5'];
+        // Match 1 is spreadsheet row 2 (row 1 is the header). Clearing just
+        // column E would leave the formula-derived Outcome and Inverse Check
+        // populated beside an empty analysis, a state the real sheet cannot
+        // produce; the helper clears those dependents too.
+        clearAnalysisLikeRealSheet(red, 2, 5);
     }
     await installStubs(page, {
         spreadsheet,

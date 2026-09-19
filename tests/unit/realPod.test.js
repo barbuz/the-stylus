@@ -17,7 +17,8 @@ import { fakeAuthManager } from '../fixtures/fakeGapi.js';
 
 import {
     REAL_POD_HEADER, REAL_DECKS, REAL_MATCH_ROWS, REAL_POD_SHEET_IDS,
-    REAL_GURU_WINDOWS, realPodGuruCells, realDeckNotesRows, realMetadataRows
+    REAL_GURU_WINDOWS, realPodGuruCells, realDeckNotesRows, realMetadataRows,
+    REAL_DERIVED_COLUMNS, clearAnalysisLikeRealSheet
 } from '../fixtures/realPod.js';
 
 const SHEET_ID = 'REAL_POD_ID';
@@ -319,4 +320,58 @@ test('real pod: header prose matches by substring, as the app assumes', () => {
     assert.equal(findColumnIndex(REAL_POD_HEADER, ['Player 2', 'Player2']), 2);
     assert.equal(findColumnIndex(REAL_POD_HEADER, ['Guru Analysis']), 4);
     assert.equal(findColumnIndex(REAL_POD_HEADER, ['Guru Signature']), 5);
+});
+
+test('real pod: blanking an analysis also clears its formula-derived columns', () => {
+    // The real sheet computes D (Outcome) and K (Inverse Check) from the
+    // analysis cells. A test that deletes only E leaves "Outcome = 1" beside an
+    // empty analysis, which the real sheet never does. This pins the helper
+    // that keeps the seeded state honest.
+    const cells = realPodGuruCells('red');
+    const sheet = { cells: { ...cells } };
+
+    assert.equal(sheet.cells['2:5'], '1.0', 'E2 analysis');
+    assert.equal(sheet.cells[`2:${REAL_DERIVED_COLUMNS.outcome}`], '1', 'D2 outcome');
+    assert.ok(sheet.cells[`2:${REAL_DERIVED_COLUMNS.inverseCheck}`], 'K2 inverse check');
+
+    clearAnalysisLikeRealSheet(sheet, 2, 5);
+
+    assert.equal(sheet.cells['2:5'], undefined, 'E2 cleared');
+    assert.equal(sheet.cells[`2:${REAL_DERIVED_COLUMNS.outcome}`], undefined, 'D2 cleared');
+    assert.equal(sheet.cells[`2:${REAL_DERIVED_COLUMNS.inverseCheck}`], undefined, 'K2 cleared');
+
+    // L (Inverse ID#) is hand-entered, not derived, so it must survive.
+    assert.equal(sheet.cells['2:12'], '22', 'L2 inverse id kept');
+    // And neighbouring rows are untouched.
+    assert.equal(sheet.cells['3:5'], '0.0', 'E3 untouched');
+});
+
+test('real pod: derived Inverse Check equals 1 minus the mirror outcome', () => {
+    // K is the outcome the mirror row is expected to carry. Row 1 (Win) mirrors
+    // ID 22 (Loss), so K = 1 - 0 = 1, matching the real sheet's K on that row.
+    const cells = realPodGuruCells('red');
+    for (const [index, match] of REAL_MATCH_ROWS.entries()) {
+        const mirror = REAL_MATCH_ROWS.find(m => m.id === match.inverse);
+        assert.ok(mirror, `row ${match.id} has a mirror`);
+        const expected = String(1 - parseFloat(mirror.outcome));
+        assert.equal(
+            cells[`${index + 2}:${REAL_DERIVED_COLUMNS.inverseCheck}`],
+            expected,
+            `K for ID ${match.id}`
+        );
+    }
+
+    // The app ignores K entirely, so a wrong K must not change the outcome.
+    const { calculateOutcomeFromAnalyses } = logic();
+    assert.equal(calculateOutcomeFromAnalyses('1', '1', '1'), '1');
+});
+
+test('real pod: the app only requests the windows it can actually see', () => {
+    // The 13-column layout is real, but the app fetches A:C and E:F only. This
+    // asserts the fixture advertises the same windows, so a test cannot
+    // accidentally depend on a column the app never reads.
+    assert.equal(REAL_GURU_WINDOWS.base, 'A1:C1000');
+    assert.equal(REAL_GURU_WINDOWS.analysis, 'E1:F1000');
+    assert.equal(REAL_DERIVED_COLUMNS.outcome, 4, 'D is outside both windows');
+    assert.equal(REAL_DERIVED_COLUMNS.inverseCheck, 11, 'K is outside both windows');
 });

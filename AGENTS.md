@@ -135,6 +135,21 @@ pin down, each of which a synthetic fixture had wrong or absent:
   completion path and the "nothing to write" path are only reachable with this
   fixture. To exercise scoring, blank a cell deliberately (see
   `blankFirstAnalysis` in `tests/e2e/realPod.spec.js`).
+- **Derived columns are the trap when blanking.** The real sheet computes
+  D (Outcome) and K (Inverse Check) from the E/G/I analysis cells, so clearing
+  an analysis clears them via recalculation. The stub does not evaluate
+  formulas, so deleting only column E leaves `Outcome = "1"` beside an empty
+  analysis — a state the sheet cannot produce. Always blank through
+  `clearAnalysisLikeRealSheet(sheet, row, analysisCol)`, which clears E, D and
+  K together and leaves the hand-entered L (Inverse ID#) alone. `L` is a row
+  reference, not derived.
+- The app never reads D or K: it fetches only `A1:C1000` and `E1:F1000` and
+  recomputes the outcome locally via `calculateOutcomeFromAnalyses`. The
+  modelled K values in the fixture are `1 - mirror outcome` (only row 1's real
+  K was observed) and exist purely so blanking stays honest. Do not write tests
+  asserting that D or K affect the app — the app cannot see them.
+- On write, the stub does not recompute D/K the way the real sheet would, so
+  post-write assertions should target E/F (the columns the app actually writes).
 - Cells arrive as FORMATTED_VALUE strings ("1", "0.5", "0"), never numbers. The
   exported .xlsx stores floats; that is a file-format artefact, not the wire
   format the app sees.
