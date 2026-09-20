@@ -49,8 +49,15 @@ the-stylus/
 ├── sw.js                       # Service worker: APP_VERSION, precache list, Scryfall cache
 ├── site.webmanifest            # PWA manifest
 ├── favicons/ images/           # Static assets
-├── .github/copilot-instructions.md
-└── package.json                # Metadata only — no real scripts/dependencies
+├── tests/
+│   ├── unit/                   # node:test suites (node --test)
+│   ├── e2e/                    # Playwright specs + in-browser Google/Scryfall stubs
+│   └── fixtures/               # Shared sheet-data fixtures and fake gapi
+├── playwright.config.js        # Playwright config (dev-only; serves files statically)
+├── .github/
+│   ├── workflows/tests.yml     # CI: runs unit + e2e on push/PR to main
+│   └── copilot-instructions.md
+└── package.json                # Metadata + dev-only test scripts (no runtime deps)
 ```
 
 ## Development Workflow
@@ -65,7 +72,113 @@ python -m http.server 8000   # then open http://localhost:8000
 - Modules use ES6 `import`/`export`; follow the import chain to understand dependencies. Import paths are **case-sensitive**.
 - Google APIs are loaded from CDN, so the app needs network access to fully run.
 - Verify syntax without a build tool: `node -c <file>` (no ESLint config exists; `node --check` is equivalent).
-- There is no test suite, no CI workflow, and no test runner — do not invent one without asking.
+- There is a CI workflow at `.github/workflows/tests.yml` that runs both suites
+  on pushes and pull requests to `main`. Ask before adding further workflows.
+
+### Testing
+
+The app has no backend and the public app ships zero dependencies, so tests must
+run without Google credentials, without network access, and without adding
+anything to the shipped bundle. Playwright is a **devDependency only** — never
+add a runtime dependency or reference test files from `index.html`/`sw.js`.
+
+```bash
+npm install                    # installs Playwright (dev only)
+npm run test:e2e:install       # one-time Chromium download
+npm test                       # unit + e2e
+npm run test:unit              # node:test only (fast, no browser)
+npm run test:e2e               # Playwright only
+```
+
+**Unit tests** (`tests/unit/`, built-in `node:test`, no dependencies):
+- `js/utils/*` is pure and imported directly.
+- `GuruAnalysisInterface` logic is tested via `Object.create(GuruAnalysisInterface.prototype)`
+  and an explicit fake `this`. The constructor calls `bindEvents()` and needs a
+  DOM, so do not `new` it in unit tests.
+- `GoogleSheetsAPI` is tested against a fake global `gapi` (`tests/fixtures/fakeGapi.js`)
+  that records requests. Tests assert on the requests and the transformations.
+  Change the module to read `gapi` lazily; do not capture it at import time.
+
+**E2E tests** (`tests/e2e/`): Playwright drives the real app in Chromium over
+`python -m http.server`. `tests/e2e/stubs.js` installs an in-browser model of a
+spreadsheet plus stubs for `gapi`, Google Identity Services, Drive appData and
+Scryfall images. The Google CDN scripts and OpenID endpoints are blocked by
+`page.route`. Tests assert on real cells written by the app, which is what
+catches off-by-one/column-mapping regressions.
+
+Notes:
+- The stub disables `navigator.serviceWorker`; otherwise its `controllerchange`
+  handler reloads the page mid-test.
+- Keep fixtures shaped like the real API payloads (ragged rows, header row at
+  range index 0) so parsing paths stay honest.
+- Some tests intentionally document current quirks rather than desired behaviour
+  (look for the "Characterization:" comments). Update those deliberately.
+
+**Real-pod fixtures** (`tests/fixtures/realPod.js`): a trimmed but structurally
+faithful excerpt of a real exported pod workbook, used by `tests/unit/realPod.test.js`
+and `tests/e2e/realPod.spec.js`. Hand-written fixtures encode guesses about the
+sheet layout; these encode what a live sheet actually contains, and that is what
+catches schema drift. Keep them in sync if the sheet format changes. Facts they
+pin down, each of which a synthetic fixture had wrong or absent:
+- Guru sheets are 13 columns wide (A:M). The app reads A:C (base, Red only) and
+  E:F (per colour). Columns G:I mirror the other gurus; K/L are Inverse Check
+  and Inverse ID#; M is a Discord thread link.
+- Headers are prose ("Player 1 (On the Play)", "ID#"), matched by substring.
+  Do not shorten them.
+- The metadata sheet is **headerless**: row 1 is already data. The app's
+  "skip header row" comment therefore never fires on real data, which is why
+  the spurious `variableName` key seen with a headered fixture does not appear.
+- Deck Notes header order is `Decklists | Goldfish Clock | Signature | Notes |
+  Additional Notes`. "Signature" here is the *goldfish* signature; the app
+  resolves it through its alias list.
+- The real pod is **finished** — every row has three agreeing analyses. The
+  completion path and the "nothing to write" path are only reachable with this
+  fixture. To exercise scoring, blank a cell deliberately (see
+  `blankFirstAnalysis` in `tests/e2e/realPod.spec.js`).
+- **Derived columns are the trap when blanking.** The real sheet computes
+  D (Outcome) and K (Inverse Check) from the E/G/I analysis cells, so clearing
+  an analysis clears them via recalculation. The stub does not evaluate
+  formulas, so deleting only column E leaves `Outcome = "1"` beside an empty
+  analysis — a state the sheet cannot produce. Always blank through
+  `clearAnalysisLikeRealSheet(sheet, row, analysisCol)`, which clears E, D and
+  K together and leaves the hand-entered L (Inverse ID#) alone. `L` is a row
+  reference, not derived.
+- The app never reads D or K: it fetches only `A1:C1000` and `E1:F1000` and
+  recomputes the outcome locally via `calculateOutcomeFromAnalyses`. The
+  modelled K values in the fixture are `1 - mirror outcome` (only row 1's real
+  K was observed) and exist purely so blanking stays honest. Do not write tests
+  asserting that D or K affect the app — the app cannot see them.
+- On write, the stub does not recompute D/K the way the real sheet would, so
+  post-write assertions should target E/F (the columns the app actually writes).
+- Cells arrive as FORMATTED_VALUE strings ("1", "0.5", "0"), never numbers. The
+  exported .xlsx stores floats; that is a file-format artefact, not the wire
+  format the app sees.
+- Decklists are pipe-separated and rendered as separate card lines; the pipes
+  are not shown to the user.
+
+### CI billing
+
+This repository is public, so standard GitHub-hosted runners are free and
+unlimited for it; only the minutes cap applies to private repos. Storage is the
+part that is *not* unlimited, even here. Consequences for the test workflow:
+
+- Traces upload **only on failure** (`if: failure()`), with `retention-days: 7`.
+  `trace: 'retain-on-failure'` means a green run writes no trace at all, and a
+  failing test is ~500 KB, so this stays far inside the 500 MB GitHub Free
+  allowance. Do not switch to uploading the HTML report on every run: it is
+  ~4 MB per run and would accumulate.
+- Artifacts share a pooled allowance with GitHub Packages and are billed by
+  GB-hour. Keep `retention-days` low on any new upload step and set
+  `if-no-files-found: ignore`.
+- Avoid larger runners. They are always charged, even for public repositories or
+  when plan quota is unused.
+
+Traces capture request and response bodies verbatim. That is fine while the E2E
+suite runs against synthetic stubs, but pointing it at a real spreadsheet would
+put real match data in a downloadable artifact.
+
+Keep `runs-on: ubuntu-latest` (a standard runner) and the browser cache stays
+under the separate 10 GB-per-repository cache allowance.
 
 ### Updating the service worker cache
 
@@ -83,7 +196,7 @@ When you add, remove, or rename a file under `js/`, `styles/`, `images/`, or `fa
 - **DOM access:** use helpers from `js/utils/domUtils.js` (`getElement`, `waitForElement`, `addEventListenerSafe`) rather than direct `document.getElementById`, so missing elements degrade gracefully.
 - **Event handling:** register UI events in `uiController.js` / the owning module's setup method rather than inline `onclick` handlers.
 - **Config:** `js/config.js` holds the public OAuth client ID and storage keys. Do not move secrets here; `public/js/config.local.js` is gitignored for local overrides.
-- **No new dependencies:** the project deliberately loads everything from CDNs and ships no bundler. Confirm with the user before adding a package.
+- **No new dependencies:** the project deliberately loads everything from CDNs and ships no bundler. Confirm with the user before adding a package. Playwright is the one agreed exception, and it is dev-only: it must never be imported by app code or added to `sw.js`/`index.html`.
 - **Commits:** short imperative subjects, often `<Area>: <change>` (e.g. `Fix next button not going to current guru's matches first`).
 
 ## Keeping Docs in Sync
