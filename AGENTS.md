@@ -21,6 +21,31 @@ A 3 Card Blind match is between two players, each with a 3-card deck. The outcom
 - A **pod** is a group of matches; a **hub** aggregates threads/pods (see `HubManager`).
 - Matches may also be scored as **goldfish** (a signature variant) — preserve this behaviour.
 
+## Domain Layer (`js/domain/`)
+
+Pure functions only: no DOM, no `gapi`, no `fetch`, no instance state. Everything
+takes the data it needs (row, colour, signature, column indices) as arguments.
+`GuruAnalysisInterface` keeps thin delegating methods so its rendering and event
+call sites are unchanged; new pure logic belongs here, not in the class.
+
+## Characterization (intentional current quirks)
+
+`tests/unit/characterization.test.js` pins these. Each is labelled CONTRACT
+(must not change) or ACCIDENT (free to fix later, but only deliberately):
+
+- **CONTRACT** — `calculateOutcomeFromAnalyses` compares raw strings, so `'1.0'`
+  vs `'1'` is a `Discrepancy`.
+- **CONTRACT** — `Incomplete` / `Discrepancy` are exact capitalised strings.
+- **CONTRACT** — the app never reads columns D (Outcome) or K (Inverse Check);
+  it fetches only `A1:C1000` and `E1:F1000` and recomputes the outcome locally.
+- **ACCIDENT** — the metadata sheet is headerless, so the parser's "skip header
+  if present" comment never fires on real data. A *headered* metadata sheet does
+  produce a spurious `variableName` key; synthetic fixtures hit that, real sheets
+  do not. Do not "fix" one case into breaking the other.
+- **ACCIDENT** — every cell arrives as a FORMATTED_VALUE string (`"1"`, `"0.5"`,
+  `"0"`), never a number. The exported `.xlsx` storing floats is a file-format
+  artefact, not the wire format the app sees.
+
 ## Repository Structure
 
 ```
@@ -29,6 +54,11 @@ the-stylus/
 ├── js/
 │   ├── main.js                 # Entry point: ThreeCardBlindGuruTool bootstrap + init flow
 │   ├── config.js               # Google OAuth client ID, scopes, discovery docs, localStorage keys
+│   ├── domain/                 # PURE: no DOM, no gapi, no fetch, no instance state
+│   │   ├── analyses.js         # outcome calc, normalize, labels, css class, correction string
+│   │   ├── guruColor.js        # colour list, colour->field/column resolution
+│   │   ├── inverseCheck.js     # inverse-error detection helpers
+│   │   └── matchRows.js        # row model build + find first incomplete/discrepancy/mirror, deck stats
 │   ├── modules/                # ES6 class-based feature modules
 │   │   ├── authManager.js
 │   │   ├── deckNotesEditor.js
@@ -91,13 +121,18 @@ npm run test:e2e               # Playwright only
 ```
 
 **Unit tests** (`tests/unit/`, built-in `node:test`, no dependencies):
-- `js/utils/*` is pure and imported directly.
+- `js/utils/*` and `js/domain/*` are pure and imported directly.
 - `GuruAnalysisInterface` logic is tested via `Object.create(GuruAnalysisInterface.prototype)`
   and an explicit fake `this`. The constructor calls `bindEvents()` and needs a
-  DOM, so do not `new` it in unit tests.
+  DOM, so do not `new` it in unit tests. Since Phase 1 moved the scoring/row logic
+  into `js/domain/`, only the UI-flow methods (e.g. `processDeckNotes`) still need
+  this scaffolding.
 - `GoogleSheetsAPI` is tested against a fake global `gapi` (`tests/fixtures/fakeGapi.js`)
   that records requests. Tests assert on the requests and the transformations.
   Change the module to read `gapi` lazily; do not capture it at import time.
+- `characterization.test.js` pins the intentional current quirks (labelled
+  CONTRACT or ACCIDENT) so a behaviour change shows up as a test diff. Read the
+  header before changing one of its expectations.
 
 **E2E tests** (`tests/e2e/`): Playwright drives the real app in Chromium over
 `python -m http.server`. `tests/e2e/stubs.js` installs an in-browser model of a

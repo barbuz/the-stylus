@@ -1,7 +1,7 @@
 // Service Worker for The Stylus PWA
 
 // Version configuration - UPDATE THIS to trigger a service worker update
-const APP_VERSION = 'v20260915';
+const APP_VERSION = 'v20260921';
 const APP_NAME = 'the-stylus';
 const CACHE_NAME = `${APP_NAME}-${APP_VERSION}`;
 
@@ -16,6 +16,10 @@ const urlsToCache = [
   `${BASE_PATH}styles/main.css`,
   `${BASE_PATH}js/main.js`,
   `${BASE_PATH}js/config.js`,
+  `${BASE_PATH}js/domain/analyses.js`,
+  `${BASE_PATH}js/domain/guruColor.js`,
+  `${BASE_PATH}js/domain/inverseCheck.js`,
+  `${BASE_PATH}js/domain/matchRows.js`,
   `${BASE_PATH}js/modules/authManager.js`,
   `${BASE_PATH}js/modules/deckNotesEditor.js`,
   `${BASE_PATH}js/modules/googleSheetsAPI.js`,
