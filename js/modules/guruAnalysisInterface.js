@@ -5,6 +5,42 @@
 import { ScryfallAPI } from './scryfallAPI.js';
 import { DeckNotesEditor } from './deckNotesEditor.js';
 import { HubManager } from './hubManager.js';
+import {
+    calculateOutcomeFromAnalyses,
+    normalizeAnalysisForComparison,
+    getGuruAnalysisValues,
+    getAnalysisClass,
+    formatAnalysisValue,
+    getAnalysisLabel,
+    getOutcomeDisplayName,
+    buildCorrectionString
+} from '../domain/analyses.js';
+import {
+    getCurrentColorAnalysis,
+    getCurrentColorSignature,
+    getCurrentGuruColIndex,
+    getGuruColorInRow
+} from '../domain/guruColor.js';
+import {
+    findColumnIndex,
+    buildMatchRows,
+    rowHasCurrentGuruSignature,
+    rowHasCurrentGuruSignatureInColor,
+    rowHasEmptySignature,
+    hasCurrentColorResult,
+    rowHasDiscrepancy,
+    rowHasMyDiscrepancy,
+    allGurusHaveMatchingResults,
+    isMatchAvailableForAnalysis,
+    isCurrentMatchAvailableForAnalysis,
+    isAnalysisComplete,
+    findFirstEmptyAnalysis,
+    findFirstDiscrepancy,
+    findNextDeck,
+    findMirrorMatchIndex,
+    getDeckStats
+} from '../domain/matchRows.js';
+import { isInverseErrorSuspected, isOutcomeValueValidForInverse } from '../domain/inverseCheck.js';
 
 export class GuruAnalysisInterface {
     constructor(sheetsAPI, uiController, guruSignature) {
@@ -77,9 +113,9 @@ export class GuruAnalysisInterface {
         const headerRow = mergedGuruSheet.values[0];
         
         // Find signature columns
-        const redSignatureColIndex = this.findColumnIndex(headerRow, ['Red Signature']);
-        const blueSignatureColIndex = this.findColumnIndex(headerRow, ['Blue Signature']);
-        const greenSignatureColIndex = this.findColumnIndex(headerRow, ['Green Signature']);
+        const redSignatureColIndex = findColumnIndex(headerRow, ['Red Signature']);
+        const blueSignatureColIndex = findColumnIndex(headerRow, ['Blue Signature']);
+        const greenSignatureColIndex = findColumnIndex(headerRow, ['Green Signature']);
 
         console.log('Signature column indices:', {
             red: redSignatureColIndex,
@@ -419,11 +455,11 @@ export class GuruAnalysisInterface {
         
         const headerRow = deckNotesSheet.values[0];
         
-        const decklistsColIndex = this.findColumnIndex(headerRow, ['Decklists', 'Decklist']);
-        const goldfishClockColIndex = this.findColumnIndex(headerRow, ['Goldfish Clock', 'Clock']);
-        const goldfishSignatureColIndex = this.findColumnIndex(headerRow, ['Goldfish Signature', 'Signature']);
-        const notesColIndex = this.findColumnIndex(headerRow, ['Notes']);
-        const additionalNotesColIndex = this.findColumnIndex(headerRow, ['Additional Notes', 'Add Notes']);
+        const decklistsColIndex = findColumnIndex(headerRow, ['Decklists', 'Decklist']);
+        const goldfishClockColIndex = findColumnIndex(headerRow, ['Goldfish Clock', 'Clock']);
+        const goldfishSignatureColIndex = findColumnIndex(headerRow, ['Goldfish Signature', 'Signature']);
+        const notesColIndex = findColumnIndex(headerRow, ['Notes']);
+        const additionalNotesColIndex = findColumnIndex(headerRow, ['Additional Notes', 'Add Notes']);
 
         const columnMap = {
             decklists: decklistsColIndex,
@@ -492,295 +528,67 @@ export class GuruAnalysisInterface {
     }
 
     processMergedGuruSheet(sheet, sheetIndex) {
-        const headerRow = sheet.values[0];
-        
-        // Find required columns in merged sheet structure
-        // Expected columns: ID, Player1, Player2, Red Analysis, Red Signature, Blue Analysis, Blue Signature, Green Analysis, Green Signature
-        const player1ColIndex = this.findColumnIndex(headerRow, ['Player 1', 'Player1']);
-        const player2ColIndex = this.findColumnIndex(headerRow, ['Player 2', 'Player2']);
+        const { rows, columnIndices, numDiscrepancies } = buildMatchRows(
+            sheet, sheetIndex, this.currentGuruColor, this.guruSignature
+        );
 
-        // Find guru analysis columns and store as class attributes
-        this.redAnalysisColIndex = this.findColumnIndex(headerRow, ['Red Analysis']);
-        this.blueAnalysisColIndex = this.findColumnIndex(headerRow, ['Blue Analysis']);
-        this.greenAnalysisColIndex = this.findColumnIndex(headerRow, ['Green Analysis']);
-        // Find guru signature columns and store as class attributes
-        this.redSignatureColIndex = this.findColumnIndex(headerRow, ['Red Signature']);
-        this.blueSignatureColIndex = this.findColumnIndex(headerRow, ['Blue Signature']);
-        this.greenSignatureColIndex = this.findColumnIndex(headerRow, ['Green Signature']);
+        // Store column indices as class attributes for the write paths
+        this.redAnalysisColIndex = columnIndices.redAnalysis;
+        this.blueAnalysisColIndex = columnIndices.blueAnalysis;
+        this.greenAnalysisColIndex = columnIndices.greenAnalysis;
+        this.redSignatureColIndex = columnIndices.redSignature;
+        this.blueSignatureColIndex = columnIndices.blueSignature;
+        this.greenSignatureColIndex = columnIndices.greenSignature;
 
-        // Throw error if any required column is missing
-        if (
-            player1ColIndex === -1 ||
-            player2ColIndex === -1 ||
-            this.redAnalysisColIndex === -1 ||
-            this.blueAnalysisColIndex === -1 ||
-            this.greenAnalysisColIndex === -1 ||
-            this.redSignatureColIndex === -1 ||
-            this.blueSignatureColIndex === -1 ||
-            this.greenSignatureColIndex === -1
-        ) {
-            throw new Error('One or more required columns are missing in the pod sheet. Please check the sheet structure.');
-        }
-
-        let discrepancies = 0;
-
-        // Process data rows (skip header)
-        for (let rowIndex = 1; rowIndex < sheet.values.length; rowIndex++) {
-            const row = sheet.values[rowIndex];
-            
-            // Get the original row index from the backend filtering
-            const originalRowIndex = sheet.originalRowIndices ? sheet.originalRowIndices[rowIndex] : rowIndex;
-
-            const player1 = row[player1ColIndex] || '';
-            const player2 = row[player2ColIndex] || '';
-            const redAnalysis = row[this.redAnalysisColIndex].toString().trim() || '';
-            const blueAnalysis = row[this.blueAnalysisColIndex].toString().trim() || '';
-            const greenAnalysis = row[this.greenAnalysisColIndex].toString().trim() || '';
-            const redSignature = row[this.redSignatureColIndex].toString().trim() || '';
-            const blueSignature = row[this.blueSignatureColIndex].toString().trim() || '';
-            const greenSignature = row[this.greenSignatureColIndex].toString().trim() || '';
-
-            // Calculate outcome based on all guru analyses
-            const outcomeValue = this.calculateOutcomeFromAnalyses(redAnalysis, blueAnalysis, greenAnalysis);
-
-            const newRow = {
-                    sheetIndex,
-                    sheetTitle: sheet.title,
-                    sheetId: sheet.sheetId,
-                    rowIndex,
-                    player1: player1.trim(),
-                    player2: player2.trim(),
-                    outcomeValue: outcomeValue,
-                    redAnalysis: redAnalysis,
-                    blueAnalysis: blueAnalysis,
-                    greenAnalysis: greenAnalysis,
-                    redSignature: redSignature,
-                    blueSignature: blueSignature,
-                    greenSignature: greenSignature,
-                    originalRowIndex: originalRowIndex // Use the original row index from unfiltered data
-                }
-
-            // Check for discrepancies for the current guru
-            if (this.rowHasMyDiscrepancy(newRow)) {
-                    discrepancies++;
-            }
-
-            // Only include rows that have player data
-            if (player1.trim() || player2.trim()) {
-                this.allRows.push(newRow);
-            }
-        }
-
-        // Update the number of discrepancies
-        this.numDiscrepancies = discrepancies;
+        this.allRows.push(...rows);
+        this.numDiscrepancies = numDiscrepancies;
     }
 
-    findColumnIndex(headerRow, possibleNames) {
-        for (const name of possibleNames) {
-            const index = headerRow.findIndex(header => 
-                header && header.toLowerCase().includes(name.toLowerCase())
-            );
-            if (index !== -1) return index;
-        }
-        return -1;
-    }
+    // The methods below delegate to js/domain/. They are kept on the class so
+    // the rendering and event call sites do not need to change in this phase.
 
     calculateOutcomeFromAnalyses(redAnalysis, blueAnalysis, greenAnalysis) {
-        // Collect all guru analyses
-        const analyses = [];
-        
-        if (redAnalysis && redAnalysis.trim() !== '') {
-            analyses.push(redAnalysis.trim());
-        }
-        if (blueAnalysis && blueAnalysis.trim() !== '') {
-            analyses.push(blueAnalysis.trim());
-        }
-        if (greenAnalysis && greenAnalysis.trim() !== '') {
-            analyses.push(greenAnalysis.trim());
-        }
-        
-        // If any guru's analysis is missing, it's incomplete
-        const expectedAnalyses = 3; // Red, Blue, Green
-        if (analyses.length < expectedAnalyses) {
-            return 'Incomplete';
-        }
-        
-        // Check if all analyses are the same
-        const uniqueAnalyses = [...new Set(analyses)];
-        if (uniqueAnalyses.length === 1) {
-            // All analyses are the same, return that value
-            return uniqueAnalyses[0];
-        } else {
-            // There are differences, it's a discrepancy
-            return 'Discrepancy';
-        }
-    }
-
-    isAnalysisComplete() {
-        // Check if all rows have analysis
-        for (let i = 0; i < this.allRows.length; i++) {
-            const row = this.allRows[i];
-            
-            // Check for empty analysis using the helper method
-            const currentAnalysis = this.getCurrentColorAnalysis(row);
-            if (!currentAnalysis || currentAnalysis.trim() === '') {
-                return false;
-            }
-        }
-        
-        return this.allRows.length > 0; // Only complete if we have rows to analyse
-    }
-
-    findFirstEmptyAnalysis(startFromIndex = 0) {
-        // Phase 1: Look for incomplete rows that belong to current guru (have current guru's signature)
-        
-        // First, find rows with current guru's signature that need analysis, starting from the given index
-        for (let i = startFromIndex; i < this.allRows.length; i++) {
-            const row = this.allRows[i];
-            
-            if (this.rowHasCurrentGuruSignatureInColor(row) && (this.getCurrentColorAnalysis(row).trim()==='')) {
-                return i;
-            }
-        }
-        
-        // If no incomplete analysis found from startFromIndex to end, loop back and search from beginning to startFromIndex
-        if (startFromIndex > 0) {
-            for (let i = 0; i < startFromIndex-1; i++) {
-                const row = this.allRows[i];
-                
-                if (this.rowHasCurrentGuruSignatureInColor(row) && (this.getCurrentColorAnalysis(row).trim()==='')) {
-                    return i;
-                }
-            }
-        }
-
-        // Phase 2: If no rows with current guru signature need analysis, look for rows with empty signatures
-        
-        // First, from startFromIndex to end
-        for (let i = startFromIndex; i < this.allRows.length; i++) {
-            const row = this.allRows[i];
-            
-            // Check if this row has empty guru signature (unclaimed)
-            if (this.rowHasEmptySignature(row)) {
-                return i;
-            }
-        }
-        
-        // If no empty signature found from startFromIndex to end, loop back and search from beginning to startFromIndex
-        if (startFromIndex > 0) {
-            for (let i = 0; i < startFromIndex-1; i++) {
-                const row = this.allRows[i];
-                
-                // Check if this row has empty guru signature (unclaimed)
-                if (this.rowHasEmptySignature(row)) {
-                    return i;
-                }
-            }
-        }
-        
-        // If no empty signature or analysis found, return null
-        return null;
-    }
-
-    findFirstDiscrepancy(startFromIndex = 0) {
-        // Look for discrepancies that belong to current guru (have current guru's signature)
-        for (let i = startFromIndex; i < this.allRows.length; i++) {
-            const row = this.allRows[i];
-            if (this.rowHasMyDiscrepancy(row)){
-                return i
-            }
-        }
-
-        // If no discrepancies found from startFromIndex to end, loop back and search from beginning to startFromIndex
-        if (startFromIndex > 0) {
-            for (let i = 0; i < startFromIndex; i++) {
-                const row = this.allRows[i];
-                if (this.rowHasMyDiscrepancy(row)){
-                    return i
-                }
-            }
-        }
-
-        // If no discrepancies found, return -1
-        return -1;
+        return calculateOutcomeFromAnalyses(redAnalysis, blueAnalysis, greenAnalysis);
     }
 
     getCurrentColorAnalysis(row) {
-        // Get the current guru's analysis value based on guru color
-        switch (this.currentGuruColor) {
-            case 'red':
-                return row.redAnalysis || '';
-            case 'blue':
-                return row.blueAnalysis || '';
-            case 'green':
-                return row.greenAnalysis || '';
-            default:
-                return '';
-        }
+        return getCurrentColorAnalysis(row, this.currentGuruColor);
     }
 
     getCurrentColorSignature(row) {
-        // Get the current row's signature for the current guru color
-        switch (this.currentGuruColor) {
-            case 'red':
-                return row.redSignature || '';
-            case 'blue':
-                return row.blueSignature || '';
-            case 'green':
-                return row.greenSignature || '';
-            default:
-                return '';
-        }
+        return getCurrentColorSignature(row, this.currentGuruColor);
     }
 
     rowHasCurrentGuruSignature(row) {
-        const currentSignature = this.guruSignature || '';
-        if (!currentSignature.trim()) {
-            return false;
-        }
-
-        return [row.redSignature, row.blueSignature, row.greenSignature].includes(currentSignature)
+        return rowHasCurrentGuruSignature(row, this.guruSignature);
     }
 
     rowHasCurrentGuruSignatureInColor(row) {
-        const currentSignature = this.guruSignature || '';
-        if (!currentSignature.trim()) {
-            return false;
-        }
-        
-        return this.getCurrentColorSignature(row) == currentSignature;
+        return rowHasCurrentGuruSignatureInColor(row, this.currentGuruColor, this.guruSignature);
     }
 
     rowHasEmptySignature(row) {
-        // Check if the current guru's signature column is empty
-        const currentRowSignature = this.getCurrentColorSignature(row);
-
-        return !currentRowSignature || currentRowSignature.trim() === '';
+        return rowHasEmptySignature(row, this.currentGuruColor);
     }
 
     isCurrentMatchAvailableForAnalysis() {
-        // Check if there's a current row selected
-        if (this.currentRowIndex < 0 || this.currentRowIndex >= this.allRows.length) {
-            return false;
-        }
-
-        const currentRow = this.allRows[this.currentRowIndex];
-        return this.isMatchAvailableForAnalysis(currentRow);
+        return isCurrentMatchAvailableForAnalysis(this.allRows, this.currentGuruColor, this.guruSignature, this.currentRowIndex);
     }
 
     isMatchAvailableForAnalysis(row) {
-        // Check if the row has the current guru's signature
-        const hasMySignature = this.rowHasCurrentGuruSignatureInColor(row);
-        
-        // Check if the row is unclaimed
-        const isUnclaimed = this.rowHasEmptySignature(row);
-        
-        // Check if the current guru's analysis is empty or incomplete
-        const currentAnalysis = this.getCurrentColorAnalysis(row);
-        const needsSolving = !currentAnalysis || currentAnalysis.trim() === '';
-        
-        // Return true if the match is mine and needs solving, OR if it's unclaimed and needs solving
-        return (hasMySignature || isUnclaimed) && needsSolving;
+        return isMatchAvailableForAnalysis(row, this.currentGuruColor, this.guruSignature);
+    }
+
+    isAnalysisComplete() {
+        return isAnalysisComplete(this.allRows, this.currentGuruColor);
+    }
+
+    findFirstEmptyAnalysis(startFromIndex = 0) {
+        return findFirstEmptyAnalysis(this.allRows, this.currentGuruColor, this.guruSignature, startFromIndex);
+    }
+
+    findFirstDiscrepancy(startFromIndex = 0) {
+        return findFirstDiscrepancy(this.allRows, this.currentGuruColor, this.guruSignature, startFromIndex);
     }
 
     async showCurrentRow() {
@@ -1360,10 +1168,7 @@ export class GuruAnalysisInterface {
     }
 
     getAnalysisLabel(value) {
-        if (value === 1.0) return 'Win';
-        if (value === 0.5) return 'Tie';
-        if (value === 0.0) return 'Loss';
-        return value.toString();
+        return getAnalysisLabel(value);
     }
 
     async claimRow() {
@@ -1847,125 +1652,41 @@ export class GuruAnalysisInterface {
      * @returns {Object} Object with totalMatches and unclaimedMatches
      */
     getDeckStats() {
-        if (this.currentRowIndex >= this.allRows.length || this.currentRowIndex < 0) {
-            return { totalMatches: 0, unclaimedMatches: 0 };
-        }
-
-        const currentRow = this.allRows[this.currentRowIndex];
-        const player1Deck = currentRow.player1;
-        if (!player1Deck) {
-            return { totalMatches: 0, unclaimedMatches: 0 };
-        }
-
-        // Find all rows with the same Player 1 deck
-        const deckRows = this.allRows.filter(row => row.player1 === player1Deck);
-        
-        // Count unclaimed matches (those without current guru signature)
-        const unclaimedMatches = deckRows.filter(row => {
-            const signature = this.getCurrentColorSignature(row);
-            return !signature || signature.trim() === '';
-        }).length;
-
-        return {
-            totalMatches: deckRows.length,
-            unclaimedMatches: unclaimedMatches
-        };
+        return getDeckStats(this.allRows, this.currentGuruColor, this.currentRowIndex);
     }
 
     /**
      * Returns the column index for the current guru color and type ('analysis' or 'signature')
      */
     getCurrentGuruColIndex(type = 'analysis') {
-        switch (type) {
-            case 'analysis':
-                switch (this.currentGuruColor) {
-                    case 'red':
-                        return this.redAnalysisColIndex;
-                    case 'blue':
-                        return this.blueAnalysisColIndex;
-                    case 'green':
-                        return this.greenAnalysisColIndex;
-                }
-                break;
-            case 'signature':
-                switch (this.currentGuruColor) {
-                    case 'red':
-                        return this.redSignatureColIndex;
-                    case 'blue':
-                        return this.blueSignatureColIndex;
-                    case 'green':
-                        return this.greenSignatureColIndex;
-                }
-                break;
-        }
-        return -1;
+        return getCurrentGuruColIndex(this.currentGuruColor, {
+            redAnalysis: this.redAnalysisColIndex,
+            blueAnalysis: this.blueAnalysisColIndex,
+            greenAnalysis: this.greenAnalysisColIndex,
+            redSignature: this.redSignatureColIndex,
+            blueSignature: this.blueSignatureColIndex,
+            greenSignature: this.greenSignatureColIndex
+        }, type);
     }
 
     /**
      * Returns the color that the current guru has claimed in a particular row, or null
      * if that row does not have the current guru's signature. 
      */
-    getGuruColorInRow(row){
-        if (row.redSignature === this.guruSignature){
-            return 'red';
-        }
-        if (row.blueSignature === this.guruSignature){
-            return 'blue';
-        }
-        if (row.greenSignature === this.guruSignature){
-            return 'green';
-        }
-
-        return null
+    getGuruColorInRow(row) {
+        return getGuruColorInRow(row, this.guruSignature);
     }
     
     getOutcomeDisplayName(outcomeValue) {
-        if (!outcomeValue || outcomeValue.trim() === '') return '';
-        
-        const value = outcomeValue.toLowerCase().trim();
-        
-        // Handle special outcome values
-        if (value === 'discrepancy') return 'Discrepancy';
-        if (value === 'incomplete') return 'Incomplete';
-        
-        // Try to parse as numeric value for consistent display
-        const numValue = parseFloat(outcomeValue);
-        if (!isNaN(numValue)) {
-            if (numValue === 1.0) return 'Win';
-            if (numValue === 0.5) return 'Tie';
-            if (numValue === 0.0) return 'Loss';
-            return `Custom (${numValue})`;
-        }
-        
-        // Return the original value with proper capitalization
-        return outcomeValue.charAt(0).toUpperCase() + outcomeValue.slice(1).toLowerCase();
+        return getOutcomeDisplayName(outcomeValue);
     }
-    
+
     getAnalysisClass(value) {
-        if (!value || value.trim() === '') return 'other';
-        
-        const numValue = parseFloat(value);
-        if (!isNaN(numValue)) {
-            if (numValue === 1.0) return 'win';
-            if (numValue === 0.5) return 'tie';
-            if (numValue === 0.0) return 'loss';
-        }
-        
-        return 'other';
+        return getAnalysisClass(value);
     }
-    
+
     formatAnalysisValue(value) {
-        if (!value || value.trim() === '') return 'Not set';
-        
-        const numValue = parseFloat(value);
-        if (!isNaN(numValue)) {
-            if (numValue === 1.0) return 'Win (1.0)';
-            if (numValue === 0.5) return 'Tie (0.5)';
-            if (numValue === 0.0) return 'Loss (0.0)';
-            return `Custom (${numValue})`;
-        }
-        
-        return value.toString();
+        return formatAnalysisValue(value);
     }
 
     highlightCurrentAnalysisButton(outcomeValue) {
@@ -2038,38 +1759,7 @@ export class GuruAnalysisInterface {
      * @returns {number} - Index of the next deck match, or current index if none found
      */
     findNextDeck() {
-        if (this.currentRowIndex >= this.allRows.length || this.currentRowIndex < 0) {
-            return this.currentRowIndex;
-        }
-
-        const currentRow = this.allRows[this.currentRowIndex];
-        const player1Deck = currentRow.player1;
-        if (!player1Deck) {
-            return this.currentRowIndex;
-        }
-
-        // Search from current row + 1 to end
-        for (let i = this.currentRowIndex + 1; i < this.allRows.length; i++) {
-            const row = this.allRows[i];
-            
-            // Check if this row has a different P1 deck and is unclaimed
-            if (row.player1 !== player1Deck && this.rowHasEmptySignature(row)) {
-                return i;
-            }
-        }
-
-        // If not found, search from beginning to current row
-        for (let i = 0; i < this.currentRowIndex; i++) {
-            const row = this.allRows[i];
-            
-            // Check if this row has a different P1 deck and is unclaimed
-            if (row.player1 !== player1Deck && this.rowHasEmptySignature(row)) {
-                return i;
-            }
-        }
-
-        // If no different deck found, return current index
-        return this.currentRowIndex;
+        return findNextDeck(this.allRows, this.currentGuruColor, this.currentRowIndex);
     }
 
     async skipToNextDeck() {
@@ -2088,19 +1778,7 @@ export class GuruAnalysisInterface {
      * @returns {number} - Index of the mirror match, or -1 if not found
      */
     findMirrorMatchIndex(rowIndex) {
-        if (rowIndex < 0 || rowIndex >= this.allRows.length) {
-            return -1;
-        }
-        
-        const currentRow = this.allRows[rowIndex];
-        
-        const mirrorIndex = this.allRows.findIndex((row, index) =>
-            index !== rowIndex && // Exclude current row
-            row.player1 === currentRow.player2 && // Swapped players
-            row.player2 === currentRow.player1
-        );
-        
-        return mirrorIndex;
+        return findMirrorMatchIndex(this.allRows, rowIndex);
     }
 
     /**
@@ -2240,11 +1918,11 @@ export class GuruAnalysisInterface {
         const headerRow = mergedGuruSheet.values[0];
         
         // Find columns
-        const player1ColIndex = this.findColumnIndex(headerRow, ['Player 1', 'Player1']);
-        const player2ColIndex = this.findColumnIndex(headerRow, ['Player 2', 'Player2']);
-        const redSignatureColIndex = this.findColumnIndex(headerRow, ['Red Signature']);
-        const blueSignatureColIndex = this.findColumnIndex(headerRow, ['Blue Signature']);
-        const greenSignatureColIndex = this.findColumnIndex(headerRow, ['Green Signature']);
+        const player1ColIndex = findColumnIndex(headerRow, ['Player 1', 'Player1']);
+        const player2ColIndex = findColumnIndex(headerRow, ['Player 2', 'Player2']);
+        const redSignatureColIndex = findColumnIndex(headerRow, ['Red Signature']);
+        const blueSignatureColIndex = findColumnIndex(headerRow, ['Blue Signature']);
+        const greenSignatureColIndex = findColumnIndex(headerRow, ['Green Signature']);
 
         const stats = {
             red: { claimed: 0, total: 0 },
@@ -2739,109 +2417,35 @@ export class GuruAnalysisInterface {
     }
 
     hasCurrentColorResult(row) {
-        const currentAnalysis = this.getCurrentColorAnalysis(row);
-        console.log(currentAnalysis)
-        return currentAnalysis && (currentAnalysis.toString().trim() !== '');
+        return hasCurrentColorResult(row, this.currentGuruColor);
     }
 
     rowHasDiscrepancy(row) {
-        const outcomeValue = (row.outcomeValue || '').toString().toLowerCase().trim();
-        if (outcomeValue === 'discrepancy') {
-            return true;
-        }
-
-        const normalizedAnalyses = this.getGuruAnalysisValues(row)
-            .map(value => this.normalizeAnalysisForComparison(value))
-            .filter(Boolean);
-
-        return normalizedAnalyses.length >= 2 && new Set(normalizedAnalyses).size > 1;
+        return rowHasDiscrepancy(row);
     }
 
     rowHasMyDiscrepancy(row) {
-        return this.rowHasDiscrepancy(row) && this.rowHasCurrentGuruSignature(row) && this.hasCurrentColorResult(row);
+        return rowHasMyDiscrepancy(row, this.currentGuruColor, this.guruSignature);
     }
 
     getGuruAnalysisValues(row) {
-        if (!row) {
-            return [];
-        }
-        return [row.redAnalysis || '', row.blueAnalysis || '', row.greenAnalysis || ''];
+        return getGuruAnalysisValues(row);
     }
 
     allGurusHaveMatchingResults(row) {
-        const normalizedAnalyses = this.getGuruAnalysisValues(row)
-            .map(value => this.normalizeAnalysisForComparison(value))
-            .filter(Boolean);
-        return normalizedAnalyses.length === 3 && new Set(normalizedAnalyses).size === 1;
+        return allGurusHaveMatchingResults(row);
     }
 
     normalizeAnalysisForComparison(value) {
-        if (value == null) {
-            return '';
-        }
-        const str = value.toString().trim();
-        if (!str) {
-            return '';
-        }
-        const num = parseFloat(str);
-        if (!isNaN(num)) {
-            return num.toString();
-        }
-        return str.toLowerCase();
+        return normalizeAnalysisForComparison(value);
     }
 
     isInverseErrorSuspected(rowIndex) {
-        if (rowIndex == null || rowIndex < 0 || rowIndex >= this.allRows.length) {
-            return false;
-        }
-
-        const currentRow = this.allRows[rowIndex];
-        if (!currentRow) {
-            return false;
-        }
-
-        const mirrorIndex = this.findMirrorMatchIndex(rowIndex);
-        if (mirrorIndex === -1) {
-            return false;
-        }
-
-        const inverseRow = this.allRows[mirrorIndex];
-        if (!inverseRow) {
-            return false;
-        }
-
-        const currentOutcome = currentRow.outcomeValue;
-        const inverseOutcome = inverseRow.outcomeValue;
-
-        if (!this.isOutcomeValueValidForInverse(currentOutcome) ||
-            !this.isOutcomeValueValidForInverse(inverseOutcome)) {
-            return false;
-        }
-
-        const currentNum = parseFloat(currentOutcome);
-        const inverseNum = parseFloat(inverseOutcome);
-
-        return (
-            (currentNum === 0.0 || inverseNum === 0.0) &&
-            currentNum !== 1.0 &&
-            inverseNum !== 1.0
-        );
+        return isInverseErrorSuspected(this.allRows, rowIndex, (index) => this.findMirrorMatchIndex(index));
     }
 
     isOutcomeValueValidForInverse(value) {
-        if (value == null) {
-            return false;
-        }
-        const str = value.toString().trim();
-        if (!str) {
-            return false;
-        }
-        const lower = str.toLowerCase();
-        if (lower === 'incomplete' || lower === 'discrepancy') {
-            return false;
-        }
-        const num = parseFloat(str);
-        return !isNaN(num);
+        return isOutcomeValueValidForInverse(value);
     }
 
     /**
@@ -2888,47 +2492,7 @@ export class GuruAnalysisInterface {
         const matchLink = url.toString();
         
         // Build correction string (e.g., "W/T->L")
-        const buildCorrectionString = () => {
-            const currentAnalysis = this.getCurrentColorAnalysis(currentRow);
-            if (!currentAnalysis || currentAnalysis.trim() === '') {
-                return '';
-            }
-            
-            // Get all analyses
-            const allAnalyses = [
-                currentRow.redAnalysis,
-                currentRow.blueAnalysis,
-                currentRow.greenAnalysis
-            ].filter(a => a && a.trim() !== ''); // Remove empty analyses
-            
-            // Get current guru analysis value
-            const currentValue = parseFloat(currentAnalysis);
-            
-            // Filter out analyses equal to current guru's analysis and remove duplicates
-            const differentAnalyses = [...new Set(allAnalyses.filter(a => parseFloat(a) !== currentValue))];
-            
-            // If all other analyses are the same as current, no correction needed
-            if (differentAnalyses.length === 0) {
-                return '';
-            }
-                        
-            // Convert analysis values to letters (W/T/L)
-            const analysisToLetter = (value) => {
-                const numValue = parseFloat(value);
-                if (numValue === 1.0) return 'W';
-                if (numValue === 0.5) return 'T';
-                if (numValue === 0.0) return 'L';
-                return '?';
-            };
-            
-            // Build the correction string
-            const otherLetters = differentAnalyses.map(analysisToLetter).join('/');
-            const currentLetter = analysisToLetter(currentAnalysis);
-            
-            return `\n\n${otherLetters} -> ${currentLetter}`;
-        };
-        
-        const correctionString = buildCorrectionString();
+        const correctionString = buildCorrectionString(currentRow, this.getCurrentColorAnalysis(currentRow));
         const threadText = `P1 - ${p1Cards}\nP2 - ${p2Cards}\n[See match on The Stylus](${matchLink}) :Stylus:${correctionString}\n`;
         
         // Calculate number of rows needed for textarea (count newlines + 1)

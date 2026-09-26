@@ -13,6 +13,8 @@ import assert from 'node:assert/strict';
 
 import { GoogleSheetsAPI } from '../../js/modules/googleSheetsAPI.js';
 import { GuruAnalysisInterface } from '../../js/modules/guruAnalysisInterface.js';
+import { findColumnIndex, findMirrorMatchIndex } from '../../js/domain/matchRows.js';
+import { calculateOutcomeFromAnalyses } from '../../js/domain/analyses.js';
 import { fakeAuthManager } from '../fixtures/fakeGapi.js';
 
 import {
@@ -266,18 +268,15 @@ test('real pod: processDeckNotes keys by decklist and keeps sparse notes', () =>
 
 test('real pod: mirror pairs are found by swapped decklists', () => {
     const rows = REAL_MATCH_ROWS.map(r => ({ player1: r.player1, player2: r.player2 }));
-    const instance = Object.assign(logic(), { allRows: rows });
 
     // Row 1 (bluffs vs admonition) mirrors row 2, and vice versa.
-    assert.equal(instance.findMirrorMatchIndex(0), 1);
-    assert.equal(instance.findMirrorMatchIndex(1), 0);
-    assert.equal(instance.findMirrorMatchIndex(2), 3);
-    assert.equal(instance.findMirrorMatchIndex(3), 2);
+    assert.equal(findMirrorMatchIndex(rows, 0), 1);
+    assert.equal(findMirrorMatchIndex(rows, 1), 0);
+    assert.equal(findMirrorMatchIndex(rows, 2), 3);
+    assert.equal(findMirrorMatchIndex(rows, 3), 2);
 });
 
 test('real pod: a real mirror pair inverts W<->L and preserves T', () => {
-    const { calculateOutcomeFromAnalyses } = logic();
-
     // Rows 1/22: bluffs wins on the play, admonition wins on the draw.
     const [w, l] = [REAL_MATCH_ROWS[0], REAL_MATCH_ROWS[1]];
     assert.equal(w.outcome, '1');
@@ -313,8 +312,6 @@ test('real pod: IDs stay as the strings the API returns', () => {
 });
 
 test('real pod: header prose matches by substring, as the app assumes', () => {
-    const { findColumnIndex } = logic();
-
     // Real headers are sentences, not labels; findColumnIndex is substring-based.
     assert.equal(findColumnIndex(REAL_POD_HEADER, ['Player 1', 'Player1']), 1);
     assert.equal(findColumnIndex(REAL_POD_HEADER, ['Player 2', 'Player2']), 2);
@@ -362,7 +359,6 @@ test('real pod: derived Inverse Check equals 1 minus the mirror outcome', () => 
     }
 
     // The app ignores K entirely, so a wrong K must not change the outcome.
-    const { calculateOutcomeFromAnalyses } = logic();
     assert.equal(calculateOutcomeFromAnalyses('1', '1', '1'), '1');
 });
 

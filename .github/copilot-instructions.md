@@ -38,6 +38,11 @@ Before scoring a match the guru must claim it by entering their guru signature. 
 ├── js/
 │   ├── main.js              # Application bootstrap
 │   ├── config.js            # Google API configuration
+│   ├── domain/              # Pure functions (no DOM, no gapi, no fetch)
+│   │   ├── analyses.js      # Outcome calc, normalisation, labels, correction string
+│   │   ├── guruColor.js     # Colour list and colour -> field/column resolution
+│   │   ├── inverseCheck.js  # Inverse-error detection helpers
+│   │   └── matchRows.js     # Row model + navigation predicates and deck stats
 │   ├── modules/             # Core application modules
 │   │   ├── authManager.js
 │   │   ├── deckNotesEditor.js
