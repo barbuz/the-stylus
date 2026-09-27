@@ -76,11 +76,9 @@ export function buildMatchRows(sheet, sheetIndex, colour, signature) {
                 row[columnIndices[colourField(colour, 'signature')]].toString().trim() || '';
         }
 
-        // Calculate outcome based on all guru analyses
+        // Calculate outcome based on all guru analyses, in colour order
         const outcomeValue = calculateOutcomeFromAnalyses(
-            colourValues.redAnalysis,
-            colourValues.blueAnalysis,
-            colourValues.greenAnalysis
+            ...GURU_COLORS.map(colour => colourValues[colourField(colour, 'analysis')])
         );
 
         const newRow = {

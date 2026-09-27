@@ -21,7 +21,15 @@ import {
     emptyColumnIndex,
     buildColumnIndex,
     getCurrentGuruColIndex,
-    getGuruColorInRow
+    getGuruColorInRow,
+    GURU_COLORS,
+    DEFAULT_GURU_COLOUR,
+    guruSheetName,
+    colourFromSheetTitle,
+    isGuruSheetTitle,
+    mergedGuruHeader,
+    mergedColumnMapping,
+    mergedLastColumn
 } from '../../js/domain/guruColor.js';
 import {
     findColumnIndex,
@@ -566,4 +574,38 @@ test('buildDiscrepancyDisplay hides gurus who have not scored', () => {
 test('buildDiscrepancyDisplay is empty-safe', () => {
     const instance = Object.assign(logic(), { currentGuruColor: 'red' });
     assert.ok(instance.buildDiscrepancyDisplay({}).includes('Discrepancy'));
+});
+
+// --- Colour registry: sheet naming and merged layout -------------------------
+//
+// These pin the derivation, not just the current values: the point of the
+// registry is that the sheet schema follows GURU_COLORS.
+
+test('registry: guru sheet names and title matching follow GURU_COLORS', () => {
+    assert.deepEqual(GURU_COLORS.map(guruSheetName), ['Red Gurus', 'Blue Gurus', 'Green Gurus']);
+    assert.equal(DEFAULT_GURU_COLOUR, 'red');
+    assert.equal(colourFromSheetTitle('Red Gurus'), 'red');
+    assert.equal(colourFromSheetTitle('blue gurus'), 'blue');
+    assert.equal(colourFromSheetTitle('Deck Notes'), null);
+    assert.equal(colourFromSheetTitle(''), null);
+    assert.equal(isGuruSheetTitle('Green Gurus'), true);
+    assert.equal(isGuruSheetTitle('Metadata'), false);
+});
+
+test('registry: merged header is one analysis/signature pair per colour, in order', () => {
+    assert.deepEqual(mergedGuruHeader(), [
+        'Red Analysis', 'Red Signature',
+        'Blue Analysis', 'Blue Signature',
+        'Green Analysis', 'Green Signature'
+    ]);
+});
+
+test('registry: merged column mapping matches the real 9-column layout', () => {
+    assert.deepEqual(mergedColumnMapping(), {
+        id: 0, player1: 1, player2: 2,
+        redAnalysis: 3, redSignature: 4,
+        blueAnalysis: 5, blueSignature: 6,
+        greenAnalysis: 7, greenSignature: 8
+    });
+    assert.equal(mergedLastColumn(), 'I');
 });

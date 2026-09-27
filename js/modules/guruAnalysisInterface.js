@@ -17,6 +17,7 @@ import {
 } from '../domain/analyses.js';
 import {
     GURU_COLORS,
+    DEFAULT_GURU_COLOUR,
     getCurrentColorAnalysis,
     getCurrentColorSignature,
     setColourAnalysis,
@@ -92,7 +93,7 @@ export class GuruAnalysisInterface {
 
         if (!currentSignature.trim()) {
             console.log('No guru signature found, defaulting to red');
-            return 'red';
+            return DEFAULT_GURU_COLOUR;
         }
 
         // Find the merged guru sheet
@@ -102,7 +103,7 @@ export class GuruAnalysisInterface {
 
         if (!mergedGuruSheet || !mergedGuruSheet.values || mergedGuruSheet.values.length < 2) {
             console.log('No merged guru sheet found, defaulting to red');
-            return 'red';
+            return DEFAULT_GURU_COLOUR;
         }
 
         const headerRow = mergedGuruSheet.values[0];
@@ -522,8 +523,8 @@ export class GuruAnalysisInterface {
     // The methods below delegate to js/domain/. They are kept on the class so
     // the rendering and event call sites do not need to change in this phase.
 
-    calculateOutcomeFromAnalyses(redAnalysis, blueAnalysis, greenAnalysis) {
-        return calculateOutcomeFromAnalyses(redAnalysis, blueAnalysis, greenAnalysis);
+    calculateOutcomeFromAnalyses(...guruAnalyses) {
+        return calculateOutcomeFromAnalyses(...guruAnalyses);
     }
 
     getCurrentColorAnalysis(row) {
