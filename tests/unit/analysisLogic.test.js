@@ -14,6 +14,12 @@ import {
 import {
     getCurrentColorAnalysis,
     getCurrentColorSignature,
+    setColourAnalysis,
+    setColourSignature,
+    colourField,
+    colourLabel,
+    emptyColumnIndex,
+    buildColumnIndex,
     getCurrentGuruColIndex,
     getGuruColorInRow
 } from '../../js/domain/guruColor.js';
@@ -403,19 +409,47 @@ test('buildCorrectionString reports the disagreement as W/T/L', () => {
 });
 
 test('getCurrentGuruColIndex maps colour and type to column indices', () => {
-    const colIndices = {
-        redAnalysis: 3, blueAnalysis: 5, greenAnalysis: 7,
-        redSignature: 4, blueSignature: 6, greenSignature: 8
+    const columnIndex = {
+        red: { analysis: 3, signature: 4 },
+        blue: { analysis: 5, signature: 6 },
+        green: { analysis: 7, signature: 8 }
     };
-    assert.equal(getCurrentGuruColIndex('green', colIndices, 'analysis'), 7);
-    assert.equal(getCurrentGuruColIndex('green', colIndices, 'signature'), 8);
-    assert.equal(getCurrentGuruColIndex('green', colIndices), 7);
+    assert.equal(getCurrentGuruColIndex('green', columnIndex, 'analysis'), 7);
+    assert.equal(getCurrentGuruColIndex('green', columnIndex, 'signature'), 8);
+    assert.equal(getCurrentGuruColIndex('green', columnIndex), 7);
 });
 
 test('getCurrentGuruColIndex returns -1 for unknown inputs', () => {
-    const colIndices = { redAnalysis: 3 };
-    assert.equal(getCurrentGuruColIndex('purple', colIndices, 'analysis'), -1);
-    assert.equal(getCurrentGuruColIndex('red', colIndices, 'nonsense'), -1);
+    const columnIndex = { red: { analysis: 3 } };
+    assert.equal(getCurrentGuruColIndex('purple', columnIndex, 'analysis'), -1);
+    assert.equal(getCurrentGuruColIndex('red', columnIndex, 'nonsense'), -1);
+});
+
+test('buildColumnIndex / emptyColumnIndex keep the per-colour shape', () => {
+    assert.deepEqual(emptyColumnIndex(), {
+        red: { analysis: -1, signature: -1 },
+        blue: { analysis: -1, signature: -1 },
+        green: { analysis: -1, signature: -1 }
+    });
+
+    const built = buildColumnIndex({
+        redAnalysis: 3, blueAnalysis: 5, greenAnalysis: 7,
+        redSignature: 4, blueSignature: 6, greenSignature: 8
+    });
+    assert.deepEqual(built, {
+        red: { analysis: 3, signature: 4 },
+        blue: { analysis: 5, signature: 6 },
+        green: { analysis: 7, signature: 8 }
+    });
+});
+
+test('colourField / colourLabel derive names from the colour', () => {
+    assert.equal(colourField('red', 'analysis'), 'redAnalysis');
+    assert.equal(colourField('green', 'signature'), 'greenSignature');
+    assert.equal(colourField('purple', 'analysis'), null);
+    assert.equal(colourField('red', 'nonsense'), null);
+    assert.equal(colourLabel('blue'), 'Blue');
+    assert.equal(colourLabel(null), '');
 });
 
 // --- Colour access -----------------------------------------------------------
@@ -429,6 +463,17 @@ test('getCurrentColorAnalysis / Signature select the colour column', () => {
     assert.equal(getCurrentColorSignature(row, 'blue'), 'bob');
     assert.equal(getCurrentColorAnalysis(row, 'purple'), '');
     assert.equal(getCurrentColorSignature(row, 'purple'), '');
+});
+
+test('setColourAnalysis / setColourSignature write the right field', () => {
+    const row = {};
+    setColourAnalysis(row, 'blue', '1');
+    setColourSignature(row, 'green', 'bob');
+    assert.equal(row.blueAnalysis, '1');
+    assert.equal(row.greenSignature, 'bob');
+    // Unknown colour is a no-op and does not add stray fields.
+    setColourAnalysis(row, 'purple', '1');
+    assert.equal(row.purpleAnalysis, undefined);
 });
 
 // --- Thread id helpers -------------------------------------------------------

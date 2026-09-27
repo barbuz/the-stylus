@@ -5,6 +5,7 @@
  * it needs as arguments. GuruAnalysisInterface keeps thin delegators so its
  * call sites are unchanged.
  */
+import { GURU_COLORS, getCurrentColorAnalysis } from './guruColor.js';
 
 /**
  * Resolve the match outcome from the three guru analyses.
@@ -68,7 +69,7 @@ export function getGuruAnalysisValues(row) {
     if (!row) {
         return [];
     }
-    return [row.redAnalysis || '', row.blueAnalysis || '', row.greenAnalysis || ''];
+    return GURU_COLORS.map(colour => getCurrentColorAnalysis(row, colour));
 }
 
 /** Convert an analysis value to a single W/T/L letter. */
@@ -149,12 +150,8 @@ export function buildCorrectionString(row, currentAnalysis) {
         return '';
     }
 
-    // Get all analyses
-    const allAnalyses = [
-        row.redAnalysis,
-        row.blueAnalysis,
-        row.greenAnalysis
-    ].filter(a => a && a.trim() !== ''); // Remove empty analyses
+    // Get all analyses (Red/Blue/Green order), dropping the empty slots
+    const allAnalyses = getGuruAnalysisValues(row).filter(a => a && a.trim() !== '');
 
     // Get current guru analysis value
     const currentValue = parseFloat(currentAnalysis);
