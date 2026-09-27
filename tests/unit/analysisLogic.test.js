@@ -531,3 +531,39 @@ test('getDeckStats counts matches sharing the current player deck', () => {
 test('getDeckStats is safe with no selection', () => {
     assert.deepEqual(getDeckStats([{ player1: 'Deck A' }], 'red', -1), { totalMatches: 0, unclaimedMatches: 0 });
 });
+
+// --- Discrepancy display -----------------------------------------------------
+//
+// buildDiscrepancyDisplay is a rendering method, but it borrows only pure
+// helpers (domain colour access + formatAnalysisValue/getAnalysisClass), so it
+// runs against the prototype without a DOM. Phase 2 replaced its per-colour
+// branches with a GURU_COLORS loop; these pin the resulting order and content.
+
+test('buildDiscrepancyDisplay lists the other gurus\' scores in colour order', () => {
+    const instance = Object.assign(logic(), { currentGuruColor: 'blue' });
+    const row = { redAnalysis: '1', blueAnalysis: '0.5', greenAnalysis: '0' };
+
+    const html = instance.buildDiscrepancyDisplay(row);
+
+    // Blue is the current guru, so it is excluded; Red comes before Green.
+    assert.ok(!html.includes('>Blue<'), 'current guru must not appear');
+    assert.ok(html.indexOf('>Red<') < html.indexOf('>Green<'), 'Red must precede Green');
+    assert.ok(html.includes('Win (1.0)'));
+    assert.ok(html.includes('Loss (0.0)'));
+});
+
+test('buildDiscrepancyDisplay hides gurus who have not scored', () => {
+    const instance = Object.assign(logic(), { currentGuruColor: 'red' });
+    const row = { redAnalysis: '1', blueAnalysis: '', greenAnalysis: '' };
+
+    const html = instance.buildDiscrepancyDisplay(row);
+
+    // No other guru has a reading, so no analysis block is emitted at all.
+    assert.ok(!html.includes('other-analyses'));
+    assert.ok(html.includes('discrepancy-header'));
+});
+
+test('buildDiscrepancyDisplay is empty-safe', () => {
+    const instance = Object.assign(logic(), { currentGuruColor: 'red' });
+    assert.ok(instance.buildDiscrepancyDisplay({}).includes('Discrepancy'));
+});
