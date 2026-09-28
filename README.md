@@ -88,8 +88,8 @@ New work is tested in **Preview** first and promoted to Production once testers
 are happy. Both versions share the same login, guru signature and recent pods,
 so you can switch between them without signing in again.
 
-The preview version is labelled **The Stylus - Preview** in the header and footer
-so testers can always tell which build they are looking at. The production
-version carries no link to preview: there is nothing in the normal UI that
-advertises it. Testers are given the preview address directly, and the preview
-footer carries a faint "Switch to Production" link if they need to get back.
+The footer shows which version you are on and offers a **Switch** button. That
+button also records your choice for this browser, so links you open afterwards
+(the pod links posted to Discord) take you to the same version. The choice is
+per browser and is not synced to your Google account; clearing site data resets
+it to Production.

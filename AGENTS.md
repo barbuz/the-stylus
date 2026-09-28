@@ -277,25 +277,25 @@ links it to production, and pushing to production does not update it. Whenever
 preview-only fix becomes permanent, it is a change to the staging copy only and
 must be replayed on production by hand.
 
-### The deployment switch is deliberately hidden
+### The deployment switch lives in the footer
 
-The footer switch is a **discovery aid for testers, not a user-facing control**.
-Ordinary users must not see or notice it, so it is gated to be inconspicuous:
+The footer switch is a **convenience for testers, not a headline control**. It
+belongs in the footer and nowhere else: the footer is below the fold, so a normal
+user has to scroll to the very bottom to meet it and most never will. That is the
+whole of the design intent — keep it out of the working area, don't go further.
 
-- The *other* deployment's markup alone decides whether any switch is rendered at
-  all: `HIDDEN_DEPLOYMENTS` in `js/config.js` lists deployments whose switch
-  provides no escape route, so an empty list is what draws the visible switch.
-  Production is hidden because its switch would only offer production itself.
-- The candidate deployment draws it muted and low-contrast: small text, an
-  explanatory label, no button until hover. It sits in the footer, below the
-  fold, and never appears on the login screen because `setupDeploymentSwitch()`
-  runs from `bindEvents()` after authentication.
+- It offers a route to the *other* deployment and records the tester's choice, so
+  the pod links they open afterwards land in the same version.
+- It never appears on the login screen because `setupDeploymentSwitch()` runs
+  from `bindEvents()` after authentication.
+- Both deployments draw it (each offering the other), so a tester who followed a
+  production link can still find their way back to preview.
 
-Do not "tidy" this into a prominent control, and do not move it into view. A
-tester is told by hand what to look for; making it discoverable is a regression.
-If you add a third deployment, revisit the gating logic in
-`applyDeploymentPreference()` — production's hidden switch only makes sense while
-exactly one alternative exists.
+Don't move it into the header or the scoring UI. Equally, don't gate it away or
+fade it into invisibility: testers need to be able to find it once they know to
+look, and hiding it outright strands them on whichever version a shared link
+opened. If you add a third deployment, revisit `alternateDeploymentUrl()`, which
+only flips between exactly two.
 
 ## Conventions
 
