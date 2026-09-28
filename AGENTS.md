@@ -85,8 +85,7 @@ the-stylus/
 │   └── fixtures/               # Shared sheet-data fixtures and fake gapi
 ├── playwright.config.js        # Playwright config (dev-only; serves files statically)
 ├── .github/
-│   ├── workflows/tests.yml     # CI: runs unit + e2e on push/PR to main
-│   └── copilot-instructions.md
+│   └── workflows/tests.yml     # CI: runs unit + e2e on push/PR to main
 └── package.json                # Metadata + dev-only test scripts (no runtime deps)
 ```
 
@@ -240,9 +239,7 @@ in `tests.yml` is the only workflow the project needs.
 
 `DEPLOYMENTS` in `js/config.js` is the source of truth for the paths and display
 names; **if a path here is wrong, deep-link routing and the switch button break
-silently**. The preview/staging repository is a plain copy rather than a fork
-(GitHub cannot fork a repository into the same owner account), and promotion
-happens by pushing a branch to the production repo and opening a PR there.
+silently**.
 
 Because the two share an origin:
 
@@ -262,6 +259,44 @@ returns early when it redirects. Adding a third deployment means extending
 `DEPLOYMENTS`; `alternateDeploymentUrl()` only knows how to flip between exactly
 two, so it would need revisiting.
 
+The leftover copy must not keep testers or automation away from the preview.
+Leaving both deployments at the same `APP_VERSION` is fine, because the caches
+are namespaced. Deploying preview actually looks like:
+
+1. Merge `preview-deployment-switch` (and anything else that should be testable)
+   into `phase2-consolidate-guru-colour` — or whichever branch is the candidate —
+   on the **production** repo. The two are siblings off `8837792`, not stacked.
+2. In the staging repo, create a PR from that branch into `main` and merge it.
+   Pushing `main` is the deploy; Pages rebuilds by itself.
+3. Open `https://barbuz.github.io/the-stylus-staging/?pod=<POD_ID>` and test.
+
+**The preview repository is a manual copy.** It has never existed as a fork
+(GitHub cannot fork a repository into the same owner account), no git remote
+links it to production, and pushing to production does not update it. Whenever
+`main` moves on production, staging drifts until someone repeats step 2. If a
+preview-only fix becomes permanent, it is a change to the staging copy only and
+must be replayed on production by hand.
+
+### The deployment switch is deliberately hidden
+
+The footer switch is a **discovery aid for testers, not a user-facing control**.
+Ordinary users must not see or notice it, so it is gated to be inconspicuous:
+
+- The *other* deployment's markup alone decides whether any switch is rendered at
+  all: `HIDDEN_DEPLOYMENTS` in `js/config.js` lists deployments whose switch
+  provides no escape route, so an empty list is what draws the visible switch.
+  Production is hidden because its switch would only offer production itself.
+- The candidate deployment draws it muted and low-contrast: small text, an
+  explanatory label, no button until hover. It sits in the footer, below the
+  fold, and never appears on the login screen because `setupDeploymentSwitch()`
+  runs from `bindEvents()` after authentication.
+
+Do not "tidy" this into a prominent control, and do not move it into view. A
+tester is told by hand what to look for; making it discoverable is a regression.
+If you add a third deployment, revisit the gating logic in
+`applyDeploymentPreference()` — production's hidden switch only makes sense while
+exactly one alternative exists.
+
 ## Conventions
 
 - **Indentation:** 4 spaces. Never tabs.
@@ -279,8 +314,11 @@ After code changes:
 
 1. Update the Repository Structure above if files were added/removed/renamed.
 2. Update `README.md` if user-facing behaviour or usage changed.
-3. Update `.github/copilot-instructions.md` when architecture changes.
-4. Bump `APP_VERSION` in `sw.js` if the change is user-visible.
+3. Bump `APP_VERSION` in `sw.js` if the change is user-visible.
+
+This file is the single source of repo guidance; do not reintroduce a second
+copy. `.github/copilot-instructions.md` existed for the same purpose and was
+removed as a stale duplicate.
 
 ## Troubleshooting
 

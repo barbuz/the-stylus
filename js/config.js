@@ -48,3 +48,10 @@ export const DEPLOYMENTS = {
         path: '/the-stylus-staging/'
     }
 };
+
+// Deployments on which the footer switch must not be drawn at all. The switch
+// exists so testers can find the preview build; ordinary users landing on
+// production should never see a control inviting them somewhere else. The
+// preview deployment does draw it, muted and below the fold, so that a tester
+// who has been told to look for it can move back.
+export const HIDDEN_DEPLOYMENTS = ['production'];

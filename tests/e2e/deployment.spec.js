@@ -100,6 +100,17 @@ test.describe('Deployment preference routing', () => {
         await expect(page.locator('.deployment-switch-btn')).toHaveText('Switch to Production');
     });
 
+    test('production never renders a switch for ordinary users', async ({ page }) => {
+        await bootDeployment(page, '/the-stylus/index.html');
+
+        await page.getByRole('button', { name: /sign in with google/i }).click();
+        await expect(page.locator('#app-content')).toBeVisible();
+
+        // A production user must never be offered a route into the preview build.
+        await expect(page.locator('#deployment-switch')).toBeEmpty();
+        await expect(page.locator('.deployment-switch-btn')).toHaveCount(0);
+    });
+
     test('merely opening a deployment does not change the stored preference', async ({ page }) => {
         await bootDeployment(page, '/the-stylus/index.html', { preference: 'preview' });
 

@@ -4,7 +4,7 @@ import { AuthManager } from './modules/authManager.js';
 import { GuruSignature } from './modules/guruSignature.js';
 import { GuruAnalysisInterface } from './modules/guruAnalysisInterface.js';
 import { RecentPodsManager } from './modules/recentPods.js';
-import { CONFIG, DEPLOYMENTS } from './config.js';
+import { CONFIG, DEPLOYMENTS, HIDDEN_DEPLOYMENTS } from './config.js';
 import {
     isValidGoogleSheetsUrl,
     extractSheetId,
@@ -132,6 +132,11 @@ class ThreeCardBlindGuruTool {
         localStorage.setItem(CONFIG.STORAGE_KEYS.PREFERRED_DEPLOYMENT, key);
     }
 
+    /**
+     * Render the tester-only deployment switch. Intentionally inconspicuous and
+     * gated: see HIDDEN_DEPLOYMENTS in config.js and the deployment notes in
+     * AGENTS.md before changing its visibility or placement.
+     */
     setupDeploymentSwitch() {
         const container = document.getElementById('deployment-switch');
         if (!container) {
@@ -142,6 +147,12 @@ class ThreeCardBlindGuruTool {
         const otherKey = Object.keys(DEPLOYMENTS).find(key => key !== current);
         container.replaceChildren();
         if (!current || !otherKey) {
+            return;
+        }
+
+        // Production draws nothing at all, so ordinary users never see a
+        // control pointing them at the preview build.
+        if (HIDDEN_DEPLOYMENTS.includes(current)) {
             return;
         }
 

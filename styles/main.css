@@ -2540,10 +2540,15 @@ section h2, .login-section h2 {
     font-size: 0.8rem;
 }
 
+/* Deployment switch: a tester-only escape hatch, deliberately faint and easy
+   to miss. Ordinary users should never notice it; see AGENTS.md before making
+   it more prominent. */
 .deployment-switch {
     display: inline-flex;
     align-items: center;
     gap: 8px;
+    font-size: 0.7rem;
+    color: #aaa;
 }
 
 .deployment-switch:empty {
@@ -2551,22 +2556,26 @@ section h2, .login-section h2 {
 }
 
 .deployment-switch-note {
-    color: #888;
-    font-size: 0.8rem;
+    color: #aaa;
+    font-size: 0.7rem;
 }
 
 .deployment-switch-btn {
     background: none;
-    border: 1px solid #3498db;
-    color: #3498db;
-    border-radius: 4px;
-    padding: 2px 8px;
-    font-size: 0.8rem;
+    border: none;
+    padding: 0;
+    margin: 0;
+    color: #aaa;
+    font-size: 0.7rem;
+    font-family: inherit;
+    text-decoration: underline dotted;
     cursor: pointer;
+    opacity: 0.55;
 }
 
-.deployment-switch-btn:hover {
-    background: #3498db;
-    color: #fff;
+.deployment-switch:hover .deployment-switch-btn,
+.deployment-switch-btn:focus-visible {
+    opacity: 1;
+    color: #888;
 }
 
