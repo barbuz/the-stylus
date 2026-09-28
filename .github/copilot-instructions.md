@@ -88,6 +88,19 @@ Before scoring a match the guru must claim it by entering their guru signature. 
 3. **Check the README.md**: Ensure the README reflects any changes made to the application or its usage.
 4. **Commit your changes**: Use clear commit messages that describe the changes made.
 
+### Production and Preview Deployments
+The app is served from two GitHub Pages project sites on the same origin:
+- Production: `https://barbuz.github.io/the-stylus/`
+- Preview: `https://barbuz.github.io/the-stylus-staging/`
+
+New changes are tested in preview first, then promoted to production. Both share
+`localStorage` and the Google appData preferences file by design, so login and
+preferences survive a switch. `DEPLOYMENTS` in `js/config.js` holds the paths and
+display names; `resolveDeploymentRedirect()` in `js/utils/urlUtils.js` decides
+whether a deep link should open in the browser's preferred deployment. The
+service-worker cache name is namespaced per deployment in `sw.js` so the two
+deployments never evict each other's caches. See AGENTS.md for details.
+
 ### Working with the Codebase
 - **Entry point**: Always start by examining `index.html` and `js/main.js`
 - **Module system**: Uses ES6 import/export - follow import chains to understand dependencies
