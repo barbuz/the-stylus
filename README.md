@@ -24,16 +24,41 @@ and continue guruing!
 - The app will load and parse the pod data
 - Only matches assigned to your guru signature will be displayed
 
-### 4. **Analyse Matches**
+### 4. **Fill the Goldfish Clocks**
+- Before analysing, the app opens the Deck Notes screen one deck at a time
+- The deck's cards are shown large, with its clock and notes on the right
+  (under the cards on mobile)
+- Click anywhere in the clock or notes box to edit it; a frame marks each field
+- Every deck's goldfish clock must be filled before "Start guruing" unlocks
+- Repeated consecutive decks are shown once; your edits apply to each of them
+- **Next without clock** jumps to the next deck still missing a clock, and
+  disappears once every clock is filled
+- Click the **Deck N of M** line in the header to open a table of every deck and
+  jump straight to one; it shows each deck's clock (and, when there is room, its
+  signature and notes), highlighting decks you have already clocked
+- Hover a clock to see who filled it
+
+### 5. **Analyse Matches**
 - View card images for both players
 - Use Win/Tie/Loss buttons to score matches
 - Navigate between matches with Previous/Next buttons
+- Use the **Deck Notes** button in the controls to revisit the clocks and notes
+  screen, opening on the current match's first player deck, then
+  **Back to analysis** to return
 - Changes are saved automatically to the Google Sheet
 
-### 5. **Track Progress**
+### 6. **Track Progress**
 - See current match number and total matches
 - View completion status
 - Restart analysis if needed
+
+### 7. **Reporting a Bug**
+- Click the small **Log** button in the footer, or in the analysis screen's
+  top-right controls while a pod is open
+- This downloads `the-stylus-log-YYYYMMDD-HHMMSS.txt`, a plain-text diagnostic
+  log with the app version, the current URL and recent activity
+- Attach that file to your bug report; access tokens and email addresses are
+  removed automatically, but the file may still contain match data
 
 ## 🌐 Browser Requirements
 
@@ -74,6 +99,21 @@ The app version is managed in `sw.js` at the top of the file. When making change
 2. This changes the service worker file, causing the browser to detect a new version
 3. The version is fetched and parsed by `main.js` and displayed in the app footer
 4. Service worker will activate on page reload with updated cache
+
+`APP_VERSION` is a cache token, not a release name. The same value can appear
+on more than one commit, and it does not identify what shipped.
+
+### Releases
+
+Releases are named by CalVer (`YYYY.MM`, or `YYYY.MM.PATCH` for a fix between
+monthly releases) and listed in [`CHANGELOG.md`](CHANGELOG.md).
+
+To cut a release, add a `## [YYYY.MM] - YYYY-MM-DD` section to the top of
+`CHANGELOG.md` and merge it to `main`. The [Release workflow](.github/workflows/release.yml)
+then creates the `vYYYY.MM` git tag and a GitHub Release whose notes are that
+changelog section. Nothing else is needed: the app has no build step, so the tag
+records what is already deployed. Re-running is safe — an existing tag is left
+alone.
 
 ### Production and preview versions
 

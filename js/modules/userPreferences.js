@@ -3,6 +3,14 @@
  * Handles storing user preferences (guru signature, recent pods) in Google appData
  */
 import { CONFIG } from '../config.js';
+import { logger } from '../utils/log.js';
+import { getItem, setItem, removeItem } from '../services/storage.js';
+
+// Shape of the persisted preferences object, independent of the app release
+// (see CHANGELOG.md / `APP_VERSION`). Production and preview share one appData
+// file, so bump this only for a change to the persisted shape, and only when
+// both deployments can still read what the other writes.
+const SCHEMA_VERSION = 1;
 
 export class UserPreferences {
     constructor() {
@@ -20,18 +28,18 @@ export class UserPreferences {
     async initialize(user) {
         this.user = user;
         this.isInitialized = true;
-        
+
         try {
             // Try to find existing preferences file
             await this.findOrCreatePreferencesFile();
-            
+
             // Load preferences from appData
             const preferences = await this.loadPreferences();
-            
-            console.log('✅ User preferences initialized for:', user.email);
+
+            logger.debug('✅ User preferences initialized');
             return preferences;
         } catch (error) {
-            console.error('Error initializing user preferences:', error);
+            logger.error('Error initializing user preferences:', error);
             // Fall back to localStorage if appData fails
             return this.loadFromLocalStorage();
         }
@@ -50,14 +58,14 @@ export class UserPreferences {
 
             if (response.result.files && response.result.files.length > 0) {
                 this.preferencesFileId = response.result.files[0].id;
-                console.log('📄 Found existing preferences file:', this.preferencesFileId);
+                logger.debug('📄 Found existing preferences file:', this.preferencesFileId);
                 return;
             }
 
             // No file found, create new one
             await this.createPreferencesFile();
         } catch (error) {
-            console.error('Error finding/creating preferences file:', error);
+            logger.error('Error finding/creating preferences file:', error);
             throw error;
         }
     }
@@ -71,7 +79,7 @@ export class UserPreferences {
                 guruSignature: '',
                 recentPods: [],
                 recentHubs: [],
-                version: '1.0.0',
+                schemaVersion: SCHEMA_VERSION,
                 lastUpdated: new Date().toISOString()
             };
 
@@ -94,10 +102,10 @@ export class UserPreferences {
 
             this.preferencesFileId = response.result.id;
             this.cache = defaultPreferences;
-            
-            console.log('📄 Created new preferences file:', this.preferencesFileId);
+
+            logger.debug('📄 Created new preferences file:', this.preferencesFileId);
         } catch (error) {
-            console.error('Error creating preferences file:', error);
+            logger.error('Error creating preferences file:', error);
             throw error;
         }
     }
@@ -108,7 +116,7 @@ export class UserPreferences {
     createMultipartBody(metadata, data) {
         const delimiter = 'foo_bar_baz';
         const close_delim = `\r\n--${delimiter}--`;
-        
+
         let body = '--' + delimiter + '\r\n';
         body += 'Content-Type: application/json\r\n\r\n';
         body += JSON.stringify(metadata) + '\r\n';
@@ -116,7 +124,7 @@ export class UserPreferences {
         body += 'Content-Type: application/json\r\n\r\n';
         body += data;
         body += close_delim;
-        
+
         return body;
     }
 
@@ -132,8 +140,8 @@ export class UserPreferences {
             });
 
             const preferences = JSON.parse(response.body);
-            
-            console.log('📥 Loaded preferences from appData:', {
+
+            logger.debug('📥 Loaded preferences from appData:', {
                 guruSignature: preferences.guruSignature,
                 recentPodsCount: preferences.recentPods?.length || 0,
                 recentHubsCount: preferences.recentHubs?.length || 0,
@@ -141,20 +149,20 @@ export class UserPreferences {
             });
 
             this.cache = preferences;
-            
+
             // Also save to localStorage for faster subsequent loads
             this.saveToLocalStorage(preferences);
-            
+
             return preferences;
         } catch (error) {
-            console.error('Error loading preferences from file:', error);
+            logger.error('Error loading preferences from file:', error);
             throw error;
         }
     }
 
     /**
      * Load preferences from Google appData
-     * Uses stale-while-revalidate: returns cached data immediately, 
+     * Uses stale-while-revalidate: returns cached data immediately,
      * then fetches fresh data in background
      */
     async loadPreferences() {
@@ -165,26 +173,26 @@ export class UserPreferences {
         // If we have cached data, return it immediately
         const cachedData = this.loadFromLocalStorage();
         if (cachedData) {
-            console.log('⚡ Returning cached preferences (revalidating in background)');
+            logger.debug('⚡ Returning cached preferences (revalidating in background)');
             this.cache = cachedData;
-            
+
             // Fetch fresh data in background
             this.loadPreferencesFromFile(this.preferencesFileId)
                 .then(freshData => {
                     // Update cache silently
                     this.cache = freshData;
                     this.saveToLocalStorage(freshData);
-                    console.log('🔄 Background refresh of preferences file complete');
+                    logger.debug('🔄 Background refresh of preferences file complete');
                 })
                 .catch(error => {
-                    console.warn('Background refresh of preferences file failed, keeping cached data:', error);
+                    logger.warn('Background refresh of preferences file failed, keeping cached data:', error);
                 });
-            
+
             return cachedData;
         }
 
         // No cache, fetch normally
-        console.log('📥 Loading preferences from appData');
+        logger.debug('📥 Loading preferences from appData');
         return await this.loadPreferencesFromFile(this.preferencesFileId);
     }
 
@@ -201,7 +209,7 @@ export class UserPreferences {
         try {
             // Update timestamp
             preferences.lastUpdated = new Date().toISOString();
-            
+
             const response = await gapi.client.request({
                 path: `https://www.googleapis.com/upload/drive/v3/files/${this.preferencesFileId}`,
                 method: 'PATCH',
@@ -215,11 +223,11 @@ export class UserPreferences {
             });
 
             this.cache = preferences;
-            
-            console.log('💾 Saved preferences to appData');
+
+            logger.debug('💾 Saved preferences to appData');
             return response;
         } catch (error) {
-            console.error('Error saving preferences to appData:', error);
+            logger.error('Error saving preferences to appData:', error);
             throw error;
         }
     }
@@ -229,7 +237,7 @@ export class UserPreferences {
      */
     async getGuruSignature() {
         if (!this.isInitialized) {
-            return localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE) || '';
+            return getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE) || '';
         }
 
         try {
@@ -238,8 +246,8 @@ export class UserPreferences {
             }
             return this.cache.guruSignature || '';
         } catch (error) {
-            console.error('Error getting guru signature from appData:', error);
-            return localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE) || '';
+            logger.error('Error getting guru signature from appData:', error);
+            return getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE) || '';
         }
     }
 
@@ -248,7 +256,7 @@ export class UserPreferences {
      */
     async setGuruSignature(signature) {
         if (!this.isInitialized) {
-            localStorage.setItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE, signature);
+            setItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE, signature);
             return;
         }
 
@@ -263,11 +271,11 @@ export class UserPreferences {
 
             }
             // Also update localStorage as backup
-            localStorage.setItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE, signature);
+            setItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE, signature);
         } catch (error) {
-            console.error('Error setting guru signature in appData:', error);
+            logger.error('Error setting guru signature in appData:', error);
             // Fall back to localStorage
-            localStorage.setItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE, signature);
+            setItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE, signature);
         }
     }
 
@@ -276,7 +284,7 @@ export class UserPreferences {
      */
     async getRecentPods() {
         if (!this.isInitialized) {
-            const stored = localStorage.getItem(CONFIG.STORAGE_KEYS.RECENT_PODS);
+            const stored = getItem(CONFIG.STORAGE_KEYS.RECENT_PODS);
             return stored ? JSON.parse(stored) : [];
         }
 
@@ -286,8 +294,8 @@ export class UserPreferences {
             }
             return this.cache.recentPods || [];
         } catch (error) {
-            console.error('Error getting recent pods from appData:', error);
-            const stored = localStorage.getItem(CONFIG.STORAGE_KEYS.RECENT_PODS);
+            logger.error('Error getting recent pods from appData:', error);
+            const stored = getItem(CONFIG.STORAGE_KEYS.RECENT_PODS);
             return stored ? JSON.parse(stored) : [];
         }
     }
@@ -297,7 +305,7 @@ export class UserPreferences {
      */
     async setRecentPods(pods) {
         if (!this.isInitialized) {
-            localStorage.setItem(CONFIG.STORAGE_KEYS.RECENT_PODS, JSON.stringify(pods));
+            setItem(CONFIG.STORAGE_KEYS.RECENT_PODS, JSON.stringify(pods));
             return;
         }
 
@@ -308,13 +316,13 @@ export class UserPreferences {
 
             this.cache.recentPods = pods;
             await this.savePreferences(this.cache);
-            
+
             // Also update localStorage as backup
-            localStorage.setItem(CONFIG.STORAGE_KEYS.RECENT_PODS, JSON.stringify(pods));
+            setItem(CONFIG.STORAGE_KEYS.RECENT_PODS, JSON.stringify(pods));
         } catch (error) {
-            console.error('Error setting recent pods in appData:', error);
+            logger.error('Error setting recent pods in appData:', error);
             // Fall back to localStorage
-            localStorage.setItem(CONFIG.STORAGE_KEYS.RECENT_PODS, JSON.stringify(pods));
+            setItem(CONFIG.STORAGE_KEYS.RECENT_PODS, JSON.stringify(pods));
         }
     }
 
@@ -323,7 +331,7 @@ export class UserPreferences {
      */
     async getRecentHubs() {
         if (!this.isInitialized) {
-            const stored = localStorage.getItem(CONFIG.STORAGE_KEYS.RECENT_HUBS);
+            const stored = getItem(CONFIG.STORAGE_KEYS.RECENT_HUBS);
             return stored ? JSON.parse(stored) : [];
         }
 
@@ -333,8 +341,8 @@ export class UserPreferences {
             }
             return this.cache.recentHubs || [];
         } catch (error) {
-            console.error('Error getting recent hubs from appData:', error);
-            const stored = localStorage.getItem(CONFIG.STORAGE_KEYS.RECENT_HUBS);
+            logger.error('Error getting recent hubs from appData:', error);
+            const stored = getItem(CONFIG.STORAGE_KEYS.RECENT_HUBS);
             return stored ? JSON.parse(stored) : [];
         }
     }
@@ -344,7 +352,7 @@ export class UserPreferences {
      */
     async setRecentHubs(hubs) {
         if (!this.isInitialized) {
-            localStorage.setItem(CONFIG.STORAGE_KEYS.RECENT_HUBS, JSON.stringify(hubs));
+            setItem(CONFIG.STORAGE_KEYS.RECENT_HUBS, JSON.stringify(hubs));
             return;
         }
 
@@ -355,13 +363,13 @@ export class UserPreferences {
 
             this.cache.recentHubs = hubs;
             await this.savePreferences(this.cache);
-            
+
             // Also update localStorage as backup
-            localStorage.setItem(CONFIG.STORAGE_KEYS.RECENT_HUBS, JSON.stringify(hubs));
+            setItem(CONFIG.STORAGE_KEYS.RECENT_HUBS, JSON.stringify(hubs));
         } catch (error) {
-            console.error('Error setting recent hubs in appData:', error);
+            logger.error('Error setting recent hubs in appData:', error);
             // Fall back to localStorage
-            localStorage.setItem(CONFIG.STORAGE_KEYS.RECENT_HUBS, JSON.stringify(hubs));
+            setItem(CONFIG.STORAGE_KEYS.RECENT_HUBS, JSON.stringify(hubs));
         }
     }
 
@@ -370,13 +378,13 @@ export class UserPreferences {
      * Returns null if no data is found in localStorage
      */
     loadFromLocalStorage() {
-        const guruSignature = localStorage.getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE);
-        const recentPodsStr = localStorage.getItem(CONFIG.STORAGE_KEYS.RECENT_PODS);
-        const recentHubsStr = localStorage.getItem(CONFIG.STORAGE_KEYS.RECENT_HUBS);
-        
+        const guruSignature = getItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE);
+        const recentPodsStr = getItem(CONFIG.STORAGE_KEYS.RECENT_PODS);
+        const recentHubsStr = getItem(CONFIG.STORAGE_KEYS.RECENT_HUBS);
+
         // Return null if no data exists in localStorage
         if (!guruSignature && !recentPodsStr && !recentHubsStr) {
-            console.log('📭 No cached preferences in localStorage');
+            logger.debug('📭 No cached preferences in localStorage');
             return null;
         }
 
@@ -388,10 +396,10 @@ export class UserPreferences {
             guruSignature: guruSignature || '',
             recentPods: recentPodsStr ? JSON.parse(recentPodsStr) : [],
             recentHubs: recentHubsStr ? JSON.parse(recentHubsStr) : [],
-            version: '1.0.0',
+            schemaVersion: SCHEMA_VERSION,
             lastUpdated: new Date().toISOString()
         };
-        console.log('📥 Loaded preferences from localStorage:', preferences);
+        logger.debug('📥 Loaded preferences from localStorage:', preferences);
         return preferences;
     }
 
@@ -400,13 +408,13 @@ export class UserPreferences {
      */
     saveToLocalStorage(preferences) {
         if (preferences.guruSignature) {
-            localStorage.setItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE, preferences.guruSignature);
+            setItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE, preferences.guruSignature);
         }
         if (preferences.recentPods) {
-            localStorage.setItem(CONFIG.STORAGE_KEYS.RECENT_PODS, JSON.stringify(preferences.recentPods));
+            setItem(CONFIG.STORAGE_KEYS.RECENT_PODS, JSON.stringify(preferences.recentPods));
         }
         if (preferences.recentHubs) {
-            localStorage.setItem(CONFIG.STORAGE_KEYS.RECENT_HUBS, JSON.stringify(preferences.recentHubs));
+            setItem(CONFIG.STORAGE_KEYS.RECENT_HUBS, JSON.stringify(preferences.recentHubs));
         }
     }
 
@@ -421,21 +429,21 @@ export class UserPreferences {
                     guruSignature: '',
                     recentPods: [],
                     recentHubs: [],
-                    version: '1.0.0',
+                    schemaVersion: SCHEMA_VERSION,
                     lastUpdated: new Date().toISOString()
                 };
-                
+
                 await this.savePreferences(emptyPreferences);
             }
         } catch (error) {
-            console.error('Error clearing appData preferences:', error);
+            logger.error('Error clearing appData preferences:', error);
         }
 
         // Clear localStorage
-        localStorage.removeItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE);
-        localStorage.removeItem(CONFIG.STORAGE_KEYS.RECENT_PODS);
-        localStorage.removeItem(CONFIG.STORAGE_KEYS.RECENT_HUBS);
-        
-        console.log('🗑️ Cleared all preferences');
+        removeItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE);
+        removeItem(CONFIG.STORAGE_KEYS.RECENT_PODS);
+        removeItem(CONFIG.STORAGE_KEYS.RECENT_HUBS);
+
+        logger.debug('🗑️ Cleared all preferences');
     }
 }

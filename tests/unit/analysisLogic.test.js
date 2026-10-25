@@ -14,8 +14,22 @@ import {
 import {
     getCurrentColorAnalysis,
     getCurrentColorSignature,
+    setColourAnalysis,
+    setColourSignature,
+    colourField,
+    colourLabel,
+    emptyColumnIndex,
+    buildColumnIndex,
     getCurrentGuruColIndex,
-    getGuruColorInRow
+    getGuruColorInRow,
+    GURU_COLORS,
+    DEFAULT_GURU_COLOUR,
+    guruSheetName,
+    colourFromSheetTitle,
+    isGuruSheetTitle,
+    mergedGuruHeader,
+    mergedColumnMapping,
+    mergedLastColumn
 } from '../../js/domain/guruColor.js';
 import {
     findColumnIndex,
@@ -26,6 +40,7 @@ import {
     hasCurrentColorResult,
     rowHasDiscrepancy,
     rowHasMyDiscrepancy,
+    countMyDiscrepancies,
     allGurusHaveMatchingResults,
     isMatchAvailableForAnalysis,
     isCurrentMatchAvailableForAnalysis,
@@ -38,18 +53,19 @@ import {
 } from '../../js/domain/matchRows.js';
 import { isInverseErrorSuspected, isOutcomeValueValidForInverse } from '../../js/domain/inverseCheck.js';
 
-import { GuruAnalysisInterface } from '../../js/modules/guruAnalysisInterface.js';
+import { AnalysisController } from '../../js/ui/analysisController.js';
+import { AppState } from '../../js/app/appState.js';
 import { makeMergedGuruSheet, makeSheetData } from '../fixtures/sheetData.js';
 
 /**
  * These tests exercise the pure domain layer directly. Only processDeckNotes is
- * still reached through GuruAnalysisInterface, because it was not part of the
+ * still reached through AnalysisController, because it was not part of the
  * Phase 1 extraction; that scaffolding borrows the prototype rather than
  * constructing an instance, since the constructor calls bindEvents() and needs
  * a DOM.
  */
 function logic() {
-    return Object.create(GuruAnalysisInterface.prototype);
+    return Object.create(AnalysisController.prototype);
 }
 
 // --- Scoring: calculateOutcomeFromAnalyses -----------------------------------
@@ -129,7 +145,7 @@ test('buildMatchRows maps columns and computes outcomes', () => {
         ['2', 'Deck A', 'Deck C', '0', 'alice', '', '', '', '']
     ]);
 
-    const { rows, columnIndices } = buildMatchRows(sheet, 0, 'red', '');
+    const { rows, columnIndices } = buildMatchRows(sheet, 0);
 
     assert.equal(rows.length, 2);
     assert.equal(columnIndices.redAnalysis, 3);
@@ -159,7 +175,7 @@ test('buildMatchRows skips rows with no player data', () => {
         ['2', 'Deck A', 'Deck B', '1', '', '1', '', '1', '']
     ]);
 
-    const { rows } = buildMatchRows(sheet, 0, 'red', '');
+    const { rows } = buildMatchRows(sheet, 0);
 
     assert.equal(rows.length, 1);
     assert.equal(rows[0].player1, 'Deck A');
@@ -168,10 +184,10 @@ test('buildMatchRows skips rows with no player data', () => {
 test('buildMatchRows throws a helpful error when columns are missing', () => {
     const sheet = { title: 'Merged Gurus', sheetId: 1, values: [['ID', 'Player 1']] };
 
-    assert.throws(() => buildMatchRows(sheet, 0, 'red', ''), /required columns are missing/);
+    assert.throws(() => buildMatchRows(sheet, 0), /required columns are missing/);
 });
 
-test('buildMatchRows counts my discrepancies only for claimed rows', () => {
+test('countMyDiscrepancies counts only rows I have claimed and scored', () => {
     const sheet = makeMergedGuruSheet([
         // Discrepancy on a row alice has claimed and scored.
         ['1', 'Deck A', 'Deck B', '1', 'alice', '0', 'bob', '0', 'carol'],
@@ -181,9 +197,9 @@ test('buildMatchRows counts my discrepancies only for claimed rows', () => {
         ['3', 'Deck E', 'Deck F', '1', 'alice', '1', 'bob', '1', 'carol']
     ]);
 
-    const { numDiscrepancies } = buildMatchRows(sheet, 0, 'red', 'alice');
+    const { rows } = buildMatchRows(sheet, 0);
 
-    assert.equal(numDiscrepancies, 1);
+    assert.equal(countMyDiscrepancies(rows, 'red', 'alice'), 1);
 });
 
 // --- Deck notes parsing ------------------------------------------------------
@@ -210,6 +226,25 @@ test('processDeckNotes builds a map keyed by decklist', () => {
         additionalNotes: 'more notes'
     });
     assert.deepEqual(result.deckNotesMap.get('Deck C'), { row: 2 });
+});
+
+test('recomputeNumDiscrepancies re-derives the tally from the live rows', () => {
+    const instance = logic();
+    instance.state = new AppState();
+    instance.state.setGuruColor('red');
+    instance.state.setSignature('alice');
+    instance.state.setRows([
+        { redAnalysis: '1', redSignature: 'alice', blueAnalysis: '0', greenAnalysis: '0' },
+        { redAnalysis: '1', redSignature: 'alice', blueAnalysis: '1', greenAnalysis: '1' }
+    ]);
+
+    instance.recomputeNumDiscrepancies();
+    assert.equal(instance.state.numDiscrepancies, 1);
+
+    // A local re-score that removes the disagreement updates the tally.
+    instance.state.rows[0].redAnalysis = '0';
+    instance.recomputeNumDiscrepancies();
+    assert.equal(instance.state.numDiscrepancies, 0);
 });
 
 // --- Row predicates ----------------------------------------------------------
@@ -403,19 +438,47 @@ test('buildCorrectionString reports the disagreement as W/T/L', () => {
 });
 
 test('getCurrentGuruColIndex maps colour and type to column indices', () => {
-    const colIndices = {
-        redAnalysis: 3, blueAnalysis: 5, greenAnalysis: 7,
-        redSignature: 4, blueSignature: 6, greenSignature: 8
+    const columnIndex = {
+        red: { analysis: 3, signature: 4 },
+        blue: { analysis: 5, signature: 6 },
+        green: { analysis: 7, signature: 8 }
     };
-    assert.equal(getCurrentGuruColIndex('green', colIndices, 'analysis'), 7);
-    assert.equal(getCurrentGuruColIndex('green', colIndices, 'signature'), 8);
-    assert.equal(getCurrentGuruColIndex('green', colIndices), 7);
+    assert.equal(getCurrentGuruColIndex('green', columnIndex, 'analysis'), 7);
+    assert.equal(getCurrentGuruColIndex('green', columnIndex, 'signature'), 8);
+    assert.equal(getCurrentGuruColIndex('green', columnIndex), 7);
 });
 
 test('getCurrentGuruColIndex returns -1 for unknown inputs', () => {
-    const colIndices = { redAnalysis: 3 };
-    assert.equal(getCurrentGuruColIndex('purple', colIndices, 'analysis'), -1);
-    assert.equal(getCurrentGuruColIndex('red', colIndices, 'nonsense'), -1);
+    const columnIndex = { red: { analysis: 3 } };
+    assert.equal(getCurrentGuruColIndex('purple', columnIndex, 'analysis'), -1);
+    assert.equal(getCurrentGuruColIndex('red', columnIndex, 'nonsense'), -1);
+});
+
+test('buildColumnIndex / emptyColumnIndex keep the per-colour shape', () => {
+    assert.deepEqual(emptyColumnIndex(), {
+        red: { analysis: -1, signature: -1 },
+        blue: { analysis: -1, signature: -1 },
+        green: { analysis: -1, signature: -1 }
+    });
+
+    const built = buildColumnIndex({
+        redAnalysis: 3, blueAnalysis: 5, greenAnalysis: 7,
+        redSignature: 4, blueSignature: 6, greenSignature: 8
+    });
+    assert.deepEqual(built, {
+        red: { analysis: 3, signature: 4 },
+        blue: { analysis: 5, signature: 6 },
+        green: { analysis: 7, signature: 8 }
+    });
+});
+
+test('colourField / colourLabel derive names from the colour', () => {
+    assert.equal(colourField('red', 'analysis'), 'redAnalysis');
+    assert.equal(colourField('green', 'signature'), 'greenSignature');
+    assert.equal(colourField('purple', 'analysis'), null);
+    assert.equal(colourField('red', 'nonsense'), null);
+    assert.equal(colourLabel('blue'), 'Blue');
+    assert.equal(colourLabel(null), '');
 });
 
 // --- Colour access -----------------------------------------------------------
@@ -429,6 +492,17 @@ test('getCurrentColorAnalysis / Signature select the colour column', () => {
     assert.equal(getCurrentColorSignature(row, 'blue'), 'bob');
     assert.equal(getCurrentColorAnalysis(row, 'purple'), '');
     assert.equal(getCurrentColorSignature(row, 'purple'), '');
+});
+
+test('setColourAnalysis / setColourSignature write the right field', () => {
+    const row = {};
+    setColourAnalysis(row, 'blue', '1');
+    setColourSignature(row, 'green', 'bob');
+    assert.equal(row.blueAnalysis, '1');
+    assert.equal(row.greenSignature, 'bob');
+    // Unknown colour is a no-op and does not add stray fields.
+    setColourAnalysis(row, 'purple', '1');
+    assert.equal(row.purpleAnalysis, undefined);
 });
 
 // --- Thread id helpers -------------------------------------------------------
@@ -450,25 +524,34 @@ test('hasDiscordThreadForRow copes with a missing thread map', () => {
 
 // --- Colour detection from sheet ---------------------------------------------
 
+/** A fake controller carrying just the session state the method reads. */
+function controllerWithSignature(signature) {
+    const instance = logic();
+    instance.state = new AppState();
+    instance.state.setSignature(signature);
+    instance.state.setRowIndex(-1);
+    return instance;
+}
+
 test('determineGuruColorFromSheet finds the colour a signature is claimed under', () => {
     const sheetData = makeSheetData({ guruRows: [
         ['1', 'Deck A', 'Deck B', '1', 'bob', '1', 'alice', '1', 'carol']
     ]});
-    const instance = Object.assign(logic(), { guruSignature: 'alice', currentRowIndex: -1 });
-    assert.equal(instance.determineGuruColorFromSheet(sheetData), 'blue');
+    assert.equal(controllerWithSignature('alice').determineGuruColorFromSheet(sheetData), 'blue');
 });
 
 test('determineGuruColorFromSheet defaults to red without a signature', () => {
-    const instance = Object.assign(logic(), { guruSignature: '', currentRowIndex: -1 });
-    assert.equal(instance.determineGuruColorFromSheet(makeSheetData({ guruRows: [] })), 'red');
+    assert.equal(controllerWithSignature('').determineGuruColorFromSheet(makeSheetData({ guruRows: [] })), 'red');
 });
 
 test('determineGuruColorFromSheet throws when the signature is nowhere', () => {
     const sheetData = makeSheetData({ guruRows: [
         ['1', 'Deck A', 'Deck B', '1', 'bob', '1', 'bob', '1', 'bob']
     ]});
-    const instance = Object.assign(logic(), { guruSignature: 'nobody', currentRowIndex: -1 });
-    assert.throws(() => instance.determineGuruColorFromSheet(sheetData), /not found in any analysis column/);
+    assert.throws(
+        () => controllerWithSignature('nobody').determineGuruColorFromSheet(sheetData),
+        /not found in any analysis column/
+    );
 });
 
 // --- Statistics --------------------------------------------------------------
@@ -485,4 +568,44 @@ test('getDeckStats counts matches sharing the current player deck', () => {
 
 test('getDeckStats is safe with no selection', () => {
     assert.deepEqual(getDeckStats([{ player1: 'Deck A' }], 'red', -1), { totalMatches: 0, unclaimedMatches: 0 });
+});
+
+// --- Discrepancy display -----------------------------------------------------
+//
+// buildDiscrepancyDisplay was confirmed unused (no callers) and removed in
+// phase 3. The discrepancy *data* is still exercised by rowHasDiscrepancy /
+// rowHasMyDiscrepancy above.
+
+// --- Colour registry: sheet naming and merged layout -------------------------
+//
+// These pin the derivation, not just the current values: the point of the
+// registry is that the sheet schema follows GURU_COLORS.
+
+test('registry: guru sheet names and title matching follow GURU_COLORS', () => {
+    assert.deepEqual(GURU_COLORS.map(guruSheetName), ['Red Gurus', 'Blue Gurus', 'Green Gurus']);
+    assert.equal(DEFAULT_GURU_COLOUR, 'red');
+    assert.equal(colourFromSheetTitle('Red Gurus'), 'red');
+    assert.equal(colourFromSheetTitle('blue gurus'), 'blue');
+    assert.equal(colourFromSheetTitle('Deck Notes'), null);
+    assert.equal(colourFromSheetTitle(''), null);
+    assert.equal(isGuruSheetTitle('Green Gurus'), true);
+    assert.equal(isGuruSheetTitle('Metadata'), false);
+});
+
+test('registry: merged header is one analysis/signature pair per colour, in order', () => {
+    assert.deepEqual(mergedGuruHeader(), [
+        'Red Analysis', 'Red Signature',
+        'Blue Analysis', 'Blue Signature',
+        'Green Analysis', 'Green Signature'
+    ]);
+});
+
+test('registry: merged column mapping matches the real 9-column layout', () => {
+    assert.deepEqual(mergedColumnMapping(), {
+        id: 0, player1: 1, player2: 2,
+        redAnalysis: 3, redSignature: 4,
+        blueAnalysis: 5, blueSignature: 6,
+        greenAnalysis: 7, greenSignature: 8
+    });
+    assert.equal(mergedLastColumn(), 'I');
 });

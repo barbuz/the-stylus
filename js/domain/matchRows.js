@@ -5,7 +5,14 @@
  * signature as arguments. No DOM, no gapi, no fetch.
  */
 import { calculateOutcomeFromAnalyses, getGuruAnalysisValues, normalizeAnalysisForComparison } from './analyses.js';
-import { getCurrentColorAnalysis, getCurrentColorSignature } from './guruColor.js';
+import {
+    GURU_COLORS,
+    getCurrentColorAnalysis,
+    getCurrentColorSignature,
+    buildColumnIndex,
+    colourField,
+    colourLabel
+} from './guruColor.js';
 
 /** Substring match of the first matching header alias, or -1. */
 export function findColumnIndex(headerRow, possibleNames) {
@@ -21,12 +28,11 @@ export function findColumnIndex(headerRow, possibleNames) {
 /**
  * Build the row model from a merged guru sheet.
  *
- * Returns the rows that carry player data, the resolved column indices, and the
- * count of the current guru's discrepancies. Rows without player data still
- * count toward `numDiscrepancies` but are not returned, matching the original
- * single-pass behaviour.
+ * Returns the rows that carry player data and the resolved column indices.
+ * Discrepancy counting lives in `countMyDiscrepancies` and is applied by
+ * `parsePodSheets`.
  */
-export function buildMatchRows(sheet, sheetIndex, colour, signature) {
+export function buildMatchRows(sheet, sheetIndex) {
     const headerRow = sheet.values[0];
 
     // Expected columns: ID, Player1, Player2, Red Analysis, Red Signature,
@@ -36,14 +42,12 @@ export function buildMatchRows(sheet, sheetIndex, colour, signature) {
 
     const columnIndices = {
         player1: player1ColIndex,
-        player2: player2ColIndex,
-        redAnalysis: findColumnIndex(headerRow, ['Red Analysis']),
-        blueAnalysis: findColumnIndex(headerRow, ['Blue Analysis']),
-        greenAnalysis: findColumnIndex(headerRow, ['Green Analysis']),
-        redSignature: findColumnIndex(headerRow, ['Red Signature']),
-        blueSignature: findColumnIndex(headerRow, ['Blue Signature']),
-        greenSignature: findColumnIndex(headerRow, ['Green Signature'])
+        player2: player2ColIndex
     };
+    for (const colour of GURU_COLORS) {
+        columnIndices[colourField(colour, 'analysis')] = findColumnIndex(headerRow, [`${colourLabel(colour)} Analysis`]);
+        columnIndices[colourField(colour, 'signature')] = findColumnIndex(headerRow, [`${colourLabel(colour)} Signature`]);
+    }
 
     // Throw error if any required column is missing
     if (Object.values(columnIndices).some(index => index === -1)) {
@@ -51,7 +55,6 @@ export function buildMatchRows(sheet, sheetIndex, colour, signature) {
     }
 
     const rows = [];
-    let discrepancies = 0;
 
     // Process data rows (skip header)
     for (let rowIndex = 1; rowIndex < sheet.values.length; rowIndex++) {
@@ -62,15 +65,20 @@ export function buildMatchRows(sheet, sheetIndex, colour, signature) {
 
         const player1 = row[columnIndices.player1] || '';
         const player2 = row[columnIndices.player2] || '';
-        const redAnalysis = row[columnIndices.redAnalysis].toString().trim() || '';
-        const blueAnalysis = row[columnIndices.blueAnalysis].toString().trim() || '';
-        const greenAnalysis = row[columnIndices.greenAnalysis].toString().trim() || '';
-        const redSignature = row[columnIndices.redSignature].toString().trim() || '';
-        const blueSignature = row[columnIndices.blueSignature].toString().trim() || '';
-        const greenSignature = row[columnIndices.greenSignature].toString().trim() || '';
+        // Pull each guru's analysis and signature through the colour lookup, so
+        // the field names are derived rather than hard-coded per colour.
+        const colourValues = {};
+        for (const colour of GURU_COLORS) {
+            colourValues[colourField(colour, 'analysis')] =
+                row[columnIndices[colourField(colour, 'analysis')]].toString().trim() || '';
+            colourValues[colourField(colour, 'signature')] =
+                row[columnIndices[colourField(colour, 'signature')]].toString().trim() || '';
+        }
 
-        // Calculate outcome based on all guru analyses
-        const outcomeValue = calculateOutcomeFromAnalyses(redAnalysis, blueAnalysis, greenAnalysis);
+        // Calculate outcome based on all guru analyses, in colour order
+        const outcomeValue = calculateOutcomeFromAnalyses(
+            ...GURU_COLORS.map(colour => colourValues[colourField(colour, 'analysis')])
+        );
 
         const newRow = {
             sheetIndex,
@@ -80,19 +88,9 @@ export function buildMatchRows(sheet, sheetIndex, colour, signature) {
             player1: player1.trim(),
             player2: player2.trim(),
             outcomeValue,
-            redAnalysis,
-            blueAnalysis,
-            greenAnalysis,
-            redSignature,
-            blueSignature,
-            greenSignature,
+            ...colourValues,
             originalRowIndex // Use the original row index from unfiltered data
         };
-
-        // Check for discrepancies for the current guru
-        if (rowHasMyDiscrepancy(newRow, colour, signature)) {
-            discrepancies++;
-        }
 
         // Only include rows that have player data
         if (player1.trim() || player2.trim()) {
@@ -100,7 +98,7 @@ export function buildMatchRows(sheet, sheetIndex, colour, signature) {
         }
     }
 
-    return { rows, columnIndices, numDiscrepancies: discrepancies };
+    return { rows, columnIndices };
 }
 
 // --- Row predicates ----------------------------------------------------------
@@ -112,7 +110,7 @@ export function rowHasCurrentGuruSignature(row, signature) {
         return false;
     }
 
-    return [row.redSignature, row.blueSignature, row.greenSignature].includes(currentSignature);
+    return GURU_COLORS.some(colour => getCurrentColorSignature(row, colour) === currentSignature);
 }
 
 /** The signature appears in the current colour's column of the row. */
@@ -161,6 +159,15 @@ export function rowHasMyDiscrepancy(row, colour, signature) {
     return rowHasDiscrepancy(row) && rowHasCurrentGuruSignature(row, signature) && hasCurrentColorResult(row, colour);
 }
 
+/**
+ * Count the current guru's discrepancies across a row model. The single source
+ * of truth for the tally: load (parsePodSheets) and the local post-score
+ * recompute both derive it here, so the two cannot drift.
+ */
+export function countMyDiscrepancies(rows, colour, signature) {
+    return rows.filter(row => rowHasMyDiscrepancy(row, colour, signature)).length;
+}
+
 /** All three gurus have scored and agree. */
 export function allGurusHaveMatchingResults(row) {
     const normalizedAnalyses = getGuruAnalysisValues(row)
@@ -190,6 +197,24 @@ export function isCurrentMatchAvailableForAnalysis(rows, colour, signature, curr
     }
 
     return isMatchAvailableForAnalysis(rows[currentRowIndex], colour, signature);
+}
+
+/**
+ * True when the current row is not awaiting work: no valid selection, or the
+ * selected row already has a result (a complete/deleted row or one claimed by
+ * another guru). Drives the "nothing to write" completion message.
+ */
+export function isCurrentRowResolved(rows, colour, signature, currentRowIndex) {
+    const currentRow = rows[currentRowIndex];
+    if (!currentRow) {
+        return true;
+    }
+
+    if (isCurrentMatchAvailableForAnalysis(rows, colour, signature, currentRowIndex)) {
+        return false;
+    }
+
+    return Boolean(hasCurrentColorResult(currentRow, colour));
 }
 
 /** Whether the current colour has scored every row (and there is at least one). */
@@ -316,6 +341,55 @@ export function findMirrorMatchIndex(rows, rowIndex) {
 }
 
 // --- Statistics --------------------------------------------------------------
+
+/** The id a row is keyed by in the thread map: its sheet row, else 1-based index. */
+export function getRowThreadId(row, fallbackIndex) {
+    if (row && typeof row.rowIndex === 'number') {
+        return row.rowIndex;
+    }
+    if (row && typeof row.originalRowIndex === 'number') {
+        return row.originalRowIndex;
+    }
+    return fallbackIndex + 1;
+}
+
+/** Whether the thread map has an entry for this row. */
+export function hasDiscordThreadForRow(threadMap, row, fallbackIndex) {
+    if (!threadMap || typeof threadMap.has !== 'function') {
+        return false;
+    }
+    const rowId = getRowThreadId(row, fallbackIndex);
+    return rowId != null && threadMap.has(rowId);
+}
+
+/**
+ * Parse every guru sheet in a pod into one row model.
+ *
+ * The merged-guru sheet is the only analysis sheet; other sheets are skipped.
+ * Returns the combined rows and the resolved column index for the current
+ * colour. The discrepancy tally is not a parse output: callers derive it from
+ * the rows with `countMyDiscrepancies`, so loading and a local post-score
+ * recompute agree by construction.
+ */
+export function parsePodSheets(sheetData) {
+    const rows = [];
+    let columnIndex = null;
+
+    if (!sheetData.sheets || !Array.isArray(sheetData.sheets)) {
+        return { rows, columnIndex };
+    }
+
+    sheetData.sheets.forEach((sheet, sheetIndex) => {
+        if (sheet.title !== 'Merged Gurus' || !sheet.values || sheet.values.length <= 1) {
+            return;
+        }
+        const parsed = buildMatchRows(sheet, sheetIndex);
+        rows.push(...parsed.rows);
+        columnIndex = buildColumnIndex(parsed.columnIndices);
+    });
+
+    return { rows, columnIndex };
+}
 
 /** Match counts for the current row's Player 1 deck. */
 export function getDeckStats(rows, colour, currentRowIndex) {

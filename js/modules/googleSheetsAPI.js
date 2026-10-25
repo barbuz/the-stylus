@@ -1,79 +1,123 @@
+import {
+    GURU_COLORS,
+    guruSheetName,
+    colourFromSheetTitle,
+    mergedGuruHeader,
+    mergedColumnMapping,
+    mergedLastColumn,
+    GURU_SHEET_ANALYSIS_COLUMN,
+    GURU_SHEET_SIGNATURE_COLUMN
+} from '../domain/guruColor.js';
+import { logger } from '../utils/log.js';
+
+/**
+ * Build a Sheets `userEnteredValue` for a cell.
+ *
+ * Auto-detection only treats a value as numeric when the *whole* trimmed string
+ * is a number. `parseFloat` alone would accept a leading number and discard the
+ * rest, so a free-text note like "2 mana, wins on turn 5" would be written as
+ * `2`. An empty value is written as an empty string rather than NaN.
+ */
+const NUMERIC_PATTERN = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/;
+
+function buildUserEnteredValue(valueType, value) {
+    switch (valueType) {
+        case 'number':
+            return { numberValue: parseFloat(value) };
+        case 'string':
+            return { stringValue: value.toString() };
+        case 'formula':
+            return { formulaValue: value.toString() };
+        case 'boolean':
+            return { boolValue: value === 'true' || value === true };
+        default: {
+            // Auto-detection: only a value that is entirely a number is numeric.
+            const str = value == null ? '' : value.toString();
+            const trimmed = str.trim();
+            if (trimmed !== '' && NUMERIC_PATTERN.test(trimmed)) {
+                return { numberValue: parseFloat(trimmed) };
+            }
+            return { stringValue: str };
+        }
+    }
+}
+
 export class GoogleSheetsAPI {
     constructor(authManager) {
         this.authManager = authManager;
     }
 
-    async getSheetData(sheetId) {
+    async getSheetData(spreadsheetId) {
         try {
             if (!this.authManager.isLoggedIn()) {
                 throw new Error('User not authenticated');
             }
 
             // Get metadata first to find all sheets
-            const metadata = await this.getSheetMetadata(sheetId);
-            
+            const metadata = await this.getSheetMetadata(spreadsheetId);
+
             // Check for optional metadata sheet and start loading it in parallel
-            const metadataSheet = metadata.sheets.find(sheet => 
+            const metadataSheet = metadata.sheets.find(sheet =>
                 sheet.title.toLowerCase() === 'metadata'
             );
-            const customMetadataPromise = metadataSheet 
-                ? this.getCustomMetadata(sheetId, metadataSheet)
+            const customMetadataPromise = metadataSheet
+                ? this.getCustomMetadata(spreadsheetId, metadataSheet)
                 : Promise.resolve({});
-            
+
             // Only process specific sheets needed for the application
-            const requiredSheetNames = ['Deck Notes', 'Red Gurus', 'Blue Gurus', 'Green Gurus'];
-            const sheetsToProcess = metadata.sheets.filter(sheet => 
-                requiredSheetNames.some(requiredName => 
+            const requiredSheetNames = ['Deck Notes', ...GURU_COLORS.map(guruSheetName)];
+            const sheetsToProcess = metadata.sheets.filter(sheet =>
+                requiredSheetNames.some(requiredName =>
                     sheet.title.toLowerCase().includes(requiredName.toLowerCase())
                 )
             );
 
-            console.log(`Processing sheets: ${sheetsToProcess.map(s => s.title).join(', ')}`);
+            logger.debug(`Processing sheets: ${sheetsToProcess.map(s => s.title).join(', ')}`);
 
             // Separate Deck Notes and Guru sheets
-            const deckNotesSheet = sheetsToProcess.find(sheet => 
+            const deckNotesSheet = sheetsToProcess.find(sheet =>
                 sheet.title.toLowerCase().includes('deck notes')
             );
-            
-            const guruSheets = sheetsToProcess.filter(sheet => 
+
+            const guruSheets = sheetsToProcess.filter(sheet =>
                 !sheet.title.toLowerCase().includes('deck notes')
             );
 
             // Process both in parallel
             const sheetPromises = [];
-            
+
             if (deckNotesSheet) {
-                sheetPromises.push(this.getDeckNotes(sheetId, deckNotesSheet));
+                sheetPromises.push(this.getDeckNotes(spreadsheetId, deckNotesSheet));
             }
-            
+
             if (guruSheets.length > 0) {
-                sheetPromises.push(this.mergeGuruSheets(sheetId, guruSheets));
+                sheetPromises.push(this.mergeGuruSheets(spreadsheetId, guruSheets));
             }
 
             // Wait for all sheet processing to complete
             const allSheetsData = await Promise.all(sheetPromises);
-            
+
             if (guruSheets.length > 0) {
                 const mergedGuruSheet = allSheetsData.find(sheet => sheet.title === 'Merged Gurus');
                 if (mergedGuruSheet) {
-                    console.log("Merged Guru Sheets:", mergedGuruSheet);
+                    logger.debug("Merged Guru Sheets:", mergedGuruSheet);
                 }
             }
 
             // Wait for custom metadata to finish loading
             const customMetadata = await customMetadataPromise;
             if (metadataSheet && Object.keys(customMetadata).length > 0) {
-                console.log('📋 Found metadata sheet:', customMetadata);
+                logger.debug('📋 Found metadata sheet:', customMetadata);
             }
 
             return {
-                sheetId,
+                spreadsheetId,
                 title: metadata.title,
                 sheets: allSheetsData,
                 metadata: customMetadata
             };
         } catch (error) {
-            console.error('API Error:', error);
+            logger.error('API Error:', error);
             throw new Error(error.message || 'Failed to fetch sheet data');
         }
     }
@@ -106,13 +150,13 @@ export class GoogleSheetsAPI {
                         // Convert to camelCase for consistency (e.g., "Pod Name" -> "podName")
                         const key = variableName
                             .split(' ')
-                            .map((word, index) => 
-                                index === 0 
-                                    ? word.toLowerCase() 
+                            .map((word, index) =>
+                                index === 0
+                                    ? word.toLowerCase()
                                     : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
                             )
                             .join('');
-                        
+
                         metadata[key] = value;
                     }
                 }
@@ -120,49 +164,46 @@ export class GoogleSheetsAPI {
 
             return metadata;
         } catch (error) {
-            console.error('API Error (getCustomMetadata):', error);
+            logger.error('API Error (getCustomMetadata):', error);
             // Don't throw - just return empty object if metadata sheet can't be read
             return {};
         }
     }
 
-    async mergeGuruSheets(sheetId, guruSheets) {
-        // Sort sheets to ensure consistent order: Red, Blue, Green
-        const sortedSheets = guruSheets.sort((a, b) => {
-            const order = ['red', 'blue', 'green'];
-            const aIndex = order.findIndex(color => a.title.toLowerCase().includes(color));
-            const bIndex = order.findIndex(color => b.title.toLowerCase().includes(color));
-            return aIndex - bIndex;
-        });
-
-        // Get base data from Red Gurus sheet (columns A:D)
-        const redGuruSheet = sortedSheets.find(sheet => 
-            sheet.title.toLowerCase().includes('red')
+    async mergeGuruSheets(spreadsheetId, guruSheets) {
+        // Sort sheets into colour order (Red, Blue, Green) so the merge is stable.
+        const sortedSheets = [...guruSheets].sort((a, b) =>
+            GURU_COLORS.indexOf(colourFromSheetTitle(a.title)) -
+            GURU_COLORS.indexOf(colourFromSheetTitle(b.title))
         );
 
-        if (!redGuruSheet) {
+        // Base data (ID, Player 1, Player 2) is shared and lives on the first colour's sheet.
+        const baseGuruSheet = sortedSheets.find(
+            sheet => colourFromSheetTitle(sheet.title) === GURU_COLORS[0]
+        );
+
+        if (!baseGuruSheet) {
             throw new Error('Red Gurus sheet not found');
         }
 
         // Run all queries in parallel for maximum performance
         const allPromises = [
-            // Base data query (A:C from Red Gurus, excluding outcome column D)
+            // Base data query (A:C from the base sheet, excluding outcome column D)
             gapi.client.sheets.spreadsheets.values.get({
-                spreadsheetId: sheetId,
-                range: `'${redGuruSheet.title}'!A1:C1000`,
+                spreadsheetId,
+                range: `'${baseGuruSheet.title}'!A1:C1000`,
             }),
             // Analysis and signature queries for all guru sheets
             ...sortedSheets.map(async (sheet) => {
-                const color = sheet.title.toLowerCase().includes('red') ? 'red' :
-                             sheet.title.toLowerCase().includes('blue') ? 'blue' : 'green';
-                
+                const colour = colourFromSheetTitle(sheet.title);
+
                 const response = await gapi.client.sheets.spreadsheets.values.get({
-                    spreadsheetId: sheetId,
+                    spreadsheetId,
                     range: `'${sheet.title}'!E1:F1000`, // Only columns E and F (analysis and signature)
                 });
 
                 return {
-                    color,
+                    colour,
                     sheetId: sheet.sheetId,
                     values: response.result.values || []
                 };
@@ -172,27 +213,22 @@ export class GoogleSheetsAPI {
         // Wait for all queries to complete
         const [baseResponse, ...guruResults] = await Promise.all(allPromises);
         const baseValues = baseResponse.result.values || [];
-        
-        // Organize guru results by color
+
+        // Organize guru results by colour
         const guruData = {};
         guruResults.forEach(result => {
-            guruData[result.color] = {
+            guruData[result.colour] = {
                 sheetId: result.sheetId,
                 values: result.values
             };
         });
-        
+
         // Prepare merged data structure
         const mergedValues = [];
-        
+
         if (baseValues.length > 0) {
-            // Create header row: ID, Player 1, Player 2, Red Analysis, Red Signature, Blue Analysis, Blue Signature, Green Analysis, Green Signature
-            const headerRow = [
-                ...baseValues[0], // A:C from base (ID, Player 1, Player 2)
-                'Red Analysis', 'Red Signature',
-                'Blue Analysis', 'Blue Signature', 
-                'Green Analysis', 'Green Signature'
-            ];
+            // Base columns (A:C), then each colour's analysis/signature pair in order.
+            const headerRow = [...baseValues[0], ...mergedGuruHeader()];
             mergedValues.push(headerRow);
 
             // Merge data rows
@@ -206,11 +242,11 @@ export class GoogleSheetsAPI {
                 }
 
                 // Add analysis and signature from each guru sheet
-                for (const color of ['red', 'blue', 'green']) {
-                    const colorData = guruData[color];
-                    if (colorData && colorData.values[i]) {
-                        mergedRow.push(colorData.values[i][0] || ''); // Analysis (column E)
-                        mergedRow.push(colorData.values[i][1] || ''); // Signature (column F)
+                for (const colour of GURU_COLORS) {
+                    const colourData = guruData[colour];
+                    if (colourData && colourData.values[i]) {
+                        mergedRow.push(colourData.values[i][0] || ''); // Analysis (column E)
+                        mergedRow.push(colourData.values[i][1] || ''); // Signature (column F)
                     } else {
                         mergedRow.push(''); // Empty analysis
                         mergedRow.push(''); // Empty signature
@@ -225,32 +261,23 @@ export class GoogleSheetsAPI {
 
         return {
             title: 'Merged Gurus',
-            sheetId: redGuruSheet.sheetId, // Use Red Gurus sheet ID as primary
+            sheetId: baseGuruSheet.sheetId, // Use the base (Red) Gurus sheet ID as primary
             values: mergedValues,
-            range: `'${redGuruSheet.title}'!A1:I${mergedValues.length}`,
+            range: `'${baseGuruSheet.title}'!A1:${mergedLastColumn()}${mergedValues.length}`,
             majorDimension: 'ROWS',
             columnMapping: this.getMergedGuruColumnMapping(),
             hidden: hidden,
-            guruSheetIds: {
-                red: sortedSheets.find(s => s.title.toLowerCase().includes('red'))?.sheetId,
-                blue: sortedSheets.find(s => s.title.toLowerCase().includes('blue'))?.sheetId,
-                green: sortedSheets.find(s => s.title.toLowerCase().includes('green'))?.sheetId
-            }
+            guruSheetIds: Object.fromEntries(
+                GURU_COLORS.map(colour => [
+                    colour,
+                    sortedSheets.find(sheet => colourFromSheetTitle(sheet.title) === colour)?.sheetId
+                ])
+            )
         };
     }
 
     getMergedGuruColumnMapping() {
-        return {
-            id: 0,              // Column A
-            player1: 1,         // Column B
-            player2: 2,         // Column C
-            redAnalysis: 3,     // Column D
-            redSignature: 4,    // Column E
-            blueAnalysis: 5,    // Column F
-            blueSignature: 6,   // Column G
-            greenAnalysis: 7,   // Column H
-            greenSignature: 8   // Column I
-        };
+        return mergedColumnMapping();
     }
 
     /**
@@ -266,18 +293,23 @@ export class GoogleSheetsAPI {
         if (update.isMergedGuruUpdate) {
             const columnMapping = this.getMergedGuruColumnMapping();
 
-            if (update.col === columnMapping.redAnalysis + 1 || update.col === columnMapping.redSignature + 1) {
-                targetSheetId = update.guruSheetIds.red;
-                targetCol = update.col === columnMapping.redAnalysis + 1 ? 5 : 6; // E or F
-            } else if (update.col === columnMapping.blueAnalysis + 1 || update.col === columnMapping.blueSignature + 1) {
-                targetSheetId = update.guruSheetIds.blue;
-                targetCol = update.col === columnMapping.blueAnalysis + 1 ? 5 : 6; // E or F
-            } else if (update.col === columnMapping.greenAnalysis + 1 || update.col === columnMapping.greenSignature + 1) {
-                targetSheetId = update.guruSheetIds.green;
-                targetCol = update.col === columnMapping.greenAnalysis + 1 ? 5 : 6; // E or F
-            } else if (update.col <= 3) {
-                // Base columns (A:C) go to Red Gurus sheet
-                targetSheetId = update.guruSheetIds.red;
+            // Each colour's merged analysis/signature pair maps back to columns
+            // E/F on that colour's own sheet.
+            for (const colour of GURU_COLORS) {
+                const analysisCol = columnMapping[`${colour}Analysis`] + 1;
+                const signatureCol = columnMapping[`${colour}Signature`] + 1;
+                if (update.col === analysisCol || update.col === signatureCol) {
+                    targetSheetId = update.guruSheetIds[colour];
+                    targetCol = update.col === analysisCol
+                        ? GURU_SHEET_ANALYSIS_COLUMN
+                        : GURU_SHEET_SIGNATURE_COLUMN;
+                    return { targetSheetId, targetCol };
+                }
+            }
+
+            if (update.col <= 3) {
+                // Base columns (A:C) go to the first colour's sheet.
+                targetSheetId = update.guruSheetIds[GURU_COLORS[0]];
                 targetCol = update.col;
             }
         }
@@ -303,8 +335,8 @@ export class GoogleSheetsAPI {
                 id: 0,             // Column A
                 player1: 1,        // Column B
                 player2: 2,        // Column C
-                guruAnalysis: 4,   // Column E
-                guruSignature: 5   // Column F
+                guruAnalysis: GURU_SHEET_ANALYSIS_COLUMN - 1,   // Column E
+                guruSignature: GURU_SHEET_SIGNATURE_COLUMN - 1  // Column F
             };
         }
     }
@@ -329,19 +361,19 @@ export class GoogleSheetsAPI {
                 columnMapping: this.getColumnMapping(deckNotesSheet.title)
             };
         } catch (error) {
-            console.error('API Error (getDeckNotes):', error);
+            logger.error('API Error (getDeckNotes):', error);
             throw new Error(error.message || 'Failed to fetch Deck Notes sheet');
         }
     }
 
-    async updateSheetData(sheetId, updates) {
+    async updateSheetData(spreadsheetId, updates) {
         try {
             if (!this.authManager.isLoggedIn()) {
                 throw new Error('User not authenticated');
             }
 
-            console.log('📝 Updating sheet data:', {
-                spreadsheetId: sheetId,
+            logger.debug('📝 Updating sheet data:', {
+                spreadsheetId,
                 updates: updates.updates.map(u => ({
                     sheetId: u.sheetId,
                     row: u.row,
@@ -361,31 +393,7 @@ export class GoogleSheetsAPI {
                 targetSheetId = resolved.targetSheetId;
                 targetCol = resolved.targetCol;
 
-                // Use the explicitly specified value type
-                let userEnteredValue;
-                
-                switch (update.valueType) {
-                    case 'number':
-                        userEnteredValue = { numberValue: parseFloat(update.value) };
-                        break;
-                    case 'string':
-                        userEnteredValue = { stringValue: update.value.toString() };
-                        break;
-                    case 'formula':
-                        userEnteredValue = { formulaValue: update.value.toString() };
-                        break;
-                    case 'boolean':
-                        userEnteredValue = { boolValue: Boolean(update.value) };
-                        break;
-                    default:
-                        // Fallback to auto-detection if type not specified
-                        const numValue = parseFloat(update.value);
-                        if (!isNaN(numValue) && isFinite(numValue)) {
-                            userEnteredValue = { numberValue: numValue };
-                        } else {
-                            userEnteredValue = { stringValue: update.value.toString() };
-                        }
-                }
+                const userEnteredValue = buildUserEnteredValue(update.valueType, update.value);
 
                 return {
                     updateCells: {
@@ -405,13 +413,13 @@ export class GoogleSheetsAPI {
             });
 
             const response = await gapi.client.sheets.spreadsheets.batchUpdate({
-                spreadsheetId: sheetId,
+                spreadsheetId,
                 resource: {
                     requests: requests
                 }
             });
 
-            console.log('✅ Sheet update successful:', {
+            logger.debug('✅ Sheet update successful:', {
                 updatedCells: updates.updates.length,
                 responseReplies: response.result.replies?.length || 0
             });
@@ -422,19 +430,19 @@ export class GoogleSheetsAPI {
                 response: response.result
             };
         } catch (error) {
-            console.error('API Error:', error);
+            logger.error('API Error:', error);
             throw new Error(error.message || 'Failed to update sheet data');
         }
     }
 
-    async checkedUpdateSheetData(sheetId, updates) {
+    async checkedUpdateSheetData(spreadsheetId, updates) {
         try {
             if (!this.authManager.isLoggedIn()) {
                 throw new Error('User not authenticated');
             }
 
-            console.log('🔒 Performing checked update:', {
-                spreadsheetId: sheetId,
+            logger.debug('🔒 Performing checked update:', {
+                spreadsheetId,
                 updates: updates.updates.map(u => ({
                     sheetId: u.sheetId,
                     row: u.row,
@@ -466,7 +474,7 @@ export class GoogleSheetsAPI {
             }
 
             // Get all sheet metadata once
-            const metadata = await this.getSheetMetadata(sheetId);
+            const metadata = await this.getSheetMetadata(spreadsheetId);
 
             // Build A1 ranges and map to checks
             const ranges = [];
@@ -484,7 +492,7 @@ export class GoogleSheetsAPI {
 
             // Batch get all values
             const batchResponse = await gapi.client.sheets.spreadsheets.values.batchGet({
-                spreadsheetId: sheetId,
+                spreadsheetId,
                 ranges: ranges
             });
 
@@ -513,22 +521,7 @@ export class GoogleSheetsAPI {
             // Proceed with the update using the existing updateSheetData logic for passing updates only
             const updateRequests = passedChecks.map(result => {
                 const update = result.update;
-                let userEnteredValue;
-                if (update.valueType === 'number') {
-                    userEnteredValue = { numberValue: parseFloat(update.value) };
-                } else if (update.valueType === 'boolean') {
-                    userEnteredValue = { boolValue: update.value === 'true' || update.value === true };
-                } else if (update.valueType === 'string') {
-                    userEnteredValue = { stringValue: update.value.toString() };
-                } else {
-                    // Fallback to auto-detection if type not specified
-                    const numValue = parseFloat(update.value);
-                    if (!isNaN(numValue) && isFinite(numValue)) {
-                        userEnteredValue = { numberValue: numValue };
-                    } else {
-                        userEnteredValue = { stringValue: update.value.toString() };
-                    }
-                }
+                const userEnteredValue = buildUserEnteredValue(update.valueType, update.value);
                 return {
                     updateCells: {
                         start: {
@@ -549,14 +542,14 @@ export class GoogleSheetsAPI {
             let response = null;
             if (updateRequests.length > 0) {
                 response = await gapi.client.sheets.spreadsheets.batchUpdate({
-                    spreadsheetId: sheetId,
+                    spreadsheetId,
                     resource: {
                         requests: updateRequests
                     }
                 });
             }
 
-            console.log('✅ Checked sheet update complete:', {
+            logger.debug('✅ Checked sheet update complete:', {
                 updatedCells: updateRequests.length,
                 skippedCells: failedChecks.length,
                 responseReplies: response?.result?.replies?.length || 0
@@ -576,24 +569,24 @@ export class GoogleSheetsAPI {
             };
 
         } catch (error) {
-            console.error('Checked API Error:', error);
+            logger.error('Checked API Error:', error);
             throw new Error(error.message || 'Failed to perform checked update');
         }
     }
 
-    async getSheetMetadata(sheetId) {
+    async getSheetMetadata(spreadsheetId) {
         try {
             if (!this.authManager.isLoggedIn()) {
                 throw new Error('User not authenticated');
             }
 
             const response = await gapi.client.sheets.spreadsheets.get({
-                spreadsheetId: sheetId,
+                spreadsheetId,
             });
 
             return {
                 title: response.result.properties.title,
-                sheetId: sheetId,
+                spreadsheetId: spreadsheetId,
                 sheets: response.result.sheets.map(sheet => ({
                     title: sheet.properties.title,
                     sheetId: sheet.properties.sheetId,
@@ -602,19 +595,19 @@ export class GoogleSheetsAPI {
                 }))
             };
         } catch (error) {
-            console.error('API Error:', error);
+            logger.error('API Error:', error);
             throw new Error(error.message || 'Failed to fetch sheet metadata');
         }
     }
 
-    async batchUpdate(sheetId, requests) {
+    async batchUpdate(spreadsheetId, requests) {
         try {
             if (!this.authManager.isLoggedIn()) {
                 throw new Error('User not authenticated');
             }
 
             const response = await gapi.client.sheets.spreadsheets.batchUpdate({
-                spreadsheetId: sheetId,
+                spreadsheetId,
                 resource: {
                     requests: requests
                 }
@@ -625,7 +618,7 @@ export class GoogleSheetsAPI {
                 response: response.result
             };
         } catch (error) {
-            console.error('API Error:', error);
+            logger.error('API Error:', error);
             throw new Error(error.message || 'Failed to perform batch update');
         }
     }
@@ -634,14 +627,14 @@ export class GoogleSheetsAPI {
      * Unhides the Red, Blue, and Green Guru sheets in the spreadsheet.
      * Returns a promise that resolves when the operation is complete.
     */
-    async unhideGuruSheets(sheetId) {
+    async unhideGuruSheets(spreadsheetId) {
         if (!this.authManager.isLoggedIn()) {
             throw new Error('User not authenticated');
         }
         // Get all sheet metadata
-        const metadata = await this.getSheetMetadata(sheetId);
+        const metadata = await this.getSheetMetadata(spreadsheetId);
         // Only match exact Guru sheet names (case-insensitive)
-        const guruSheetNames = ['Red Gurus', 'Blue Gurus', 'Green Gurus'];
+        const guruSheetNames = GURU_COLORS.map(guruSheetName);
         const guruSheets = metadata.sheets.filter(sheet =>
             guruSheetNames.some(name => sheet.title.trim().toLowerCase() === name.toLowerCase())
         );
@@ -659,7 +652,7 @@ export class GoogleSheetsAPI {
             }
         }));
         // Send batch update
-        const response = await this.batchUpdate(sheetId, requests);
+        const response = await this.batchUpdate(spreadsheetId, requests);
         return response;
     }
 
@@ -721,7 +714,7 @@ export class GoogleSheetsAPI {
                 response: response.result
             };
         } catch (error) {
-            console.error('API Error (clearCell):', error);
+            logger.error('API Error (clearCell):', error);
             throw new Error(error.message || 'Failed to clear cell');
         }
     }

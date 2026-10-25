@@ -175,7 +175,13 @@
                                         <span class="btn-value">(0.0)</span>
                                     </button>
                                 </div>
-                                
+
+                                <button id="claim-button" class="claim-btn primary-btn" style="display: none;">Claim Match</button>
+                                <button id="claim-deck-button" class="claim-btn primary-btn" style="display: none;">Claim Deck</button>
+                                <button id="unclaim-button" class="unclaim-btn secondary-btn" style="display: none;">Unclaim Match</button>
+                                <button id="clear-result-button" class="clear-btn secondary-btn" style="display: none;">Clear My Result</button>
+                                <div id="claimed-message" class="claimed-message" style="display: none;"></div>
+
                                 <button id="skip-btn" class="secondary-btn">Next</button>
                                 <button id="next-deck-btn" class="secondary-btn deck-btn">Next Deck</button>
                                 <button id="discrepancy-btn" class="secondary-btn discrepancy-btn">Next Discrepancy</button>
@@ -208,8 +214,12 @@
                                     </div>
                                 </div>
                                 <div class="editor-controls">
+                                    <button id="deck-notes-btn" class="secondary-btn">Deck Notes</button>
                                     <button id="refresh-btn" class="secondary-btn">Refresh</button>
                                     <button id="exit-analysis-btn" class="secondary-btn">Exit</button>
+                                    <button type="button" class="log-download-btn" data-log-download title="Download diagnostic log" aria-label="Download diagnostic log">
+                                        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg> Log
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -222,6 +232,9 @@
             <div class="footer-content">
                 <span class="app-version" id="app-version">Loading version...</span>
                 <span class="deployment-switch" id="deployment-switch"></span>
+                <button type="button" class="log-download-btn" data-log-download title="Download diagnostic log" aria-label="Download diagnostic log">
+                    <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg> Log
+                </button>
             </div>
         </footer>
     </div>
