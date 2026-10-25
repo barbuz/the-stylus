@@ -1,274 +1,106 @@
-// DeckNotesEditor: Handles rendering and editing of the deck notes table
-// Extracted from GuruAnalysisInterface.showDeckNotesEditor
+/**
+ * Deck-notes gate controller.
+ *
+ * Orchestrates the one-deck-at-a-time clocks & notes screen: it owns the
+ * grouped deck list, the current index, the resolved column map and the poll
+ * timer, and delegates all DOM work to DeckNotesView and card loading to
+ * CardPresenter. It reuses the analysis screen's deck-info panel (via the
+ * shared deckInfoView) and its save workflow (analysisActions.saveDeckInfoField),
+ * so the two screens share their presentation and write paths.
+ *
+ * When the guru sheets are hidden this is the pre-guruing gate: every goldfish
+ * clock must be filled before "Start guruing" unhides the sheets and hands off
+ * to analysis. The same screen can also be opened from an active analysis
+ * session, in which case it offers "Back to analysis" instead.
+ */
+import {
+    processDeckNotes,
+    groupDeckNotes,
+    allClocksFilled,
+    deckNotesProgress,
+    decksToPreload
+} from '../domain/deckNotes.js';
+import { getElement } from '../utils/domUtils.js';
+import { DeckNotesView } from '../ui/deckNotesView.js';
+import { CardPresenter } from '../ui/cardPresenter.js';
+import { OverviewTableModal } from '../ui/overviewTableModal.js';
+import { DeckTablePresenter } from '../ui/deckTablePresenter.js';
+import { isDeckInfoEditing } from '../ui/deckInfoView.js';
+
 export class DeckNotesEditor {
-    constructor({ analysisInterface, uiController, scryfallAPI, sheetsAPI, spreadsheetID }) {
+    constructor({ analysisInterface, uiController, scryfallAPI, sheetsAPI, spreadsheetId }) {
         this.analysisInterface = analysisInterface;
         this.uiController = uiController;
         this.scryfallAPI = scryfallAPI;
         this.sheetsAPI = sheetsAPI;
-        this.spreadsheetID = spreadsheetID;
-        this.notesData = null; // Will hold the current notes data
-        this.clocksFilled = false; // Track if all clocks are filled
+        this.spreadsheetId = spreadsheetId;
+
+        this.notesData = null;
+        this.columnMap = {};
+        this.entries = [];
+        this.values = [];
+        this.deckIndex = 0;
+        this.sheetTitle = '';
+        this.fromAnalysis = false;
+        this._clockMessageShown = false;
+
+        this.deckTableModal = new OverviewTableModal();
+        this.deckTablePresenter = new DeckTablePresenter(this.deckTableModal);
+
+        this.view = new DeckNotesView({
+            onPrev: () => this.previousDeck(),
+            onNext: () => this.nextDeck(),
+            onNextEmptyClock: () => this.nextWithoutClock(),
+            onShowDeckTable: () => this.showDeckTable(),
+            onStart: () => this.startGuruing(),
+            onBack: () => this.close(false),
+            onExit: () => this.close(true)
+        });
+        this.cards = new CardPresenter(scryfallAPI, this.view);
     }
 
-    show(notesData, spreadsheetTitle) {
+    /**
+     * @param {object} notesData { title, sheetId, values }
+     * @param {object} options
+     * @param {string} options.sheetTitle
+     * @param {boolean} [options.fromAnalysis] opened from an active session
+     * @param {string} [options.startDeckString] decklist to open on, after grouping
+     */
+    show(notesData, { sheetTitle = '', fromAnalysis = false, startDeckString = null } = {}) {
         this.notesData = notesData;
-        if (!notesData || !notesData.values || notesData.values.length === 0) {
-            return this.uiController.showStatus('No deck notes found. Check the spreadsheet.', 'error');
-        }
+        this.spreadsheetId = this.analysisInterface.state.spreadsheetId || this.spreadsheetId;
+        this.sheetTitle = sheetTitle;
+        this.fromAnalysis = fromAnalysis;
 
-        // Get the deck notes editor container or create a new one
-        let deckNotesContainer = document.getElementById('deck-notes-screen');
-        if (!deckNotesContainer) {
-            deckNotesContainer = document.createElement('div');
-            deckNotesContainer.id = 'deck-notes-screen';
-            deckNotesContainer.className = 'deck-notes-screen full-screen';
-        }
-
-        const notes = notesData.values || [];
-        if (notes.length === 0) {
+        const values = notesData?.values || [];
+        if (!values.length) {
             this.uiController.showStatus('No deck notes found. Check the spreadsheet.', 'error');
             return;
         }
-        console.log(notesData)
-        const headers = notes[0] || [];
-        const headersClean = headers.map(header => header.toLowerCase().trim().replace(/\s+/g, '-'));
-        const numCols = headers.length;
-        var fixed = headers.findIndex(header => header.toLowerCase().trim() === 'signature');
-        if (fixed === -1) {
-            fixed = [];
-        } else {
-            fixed = [fixed];
+
+        const sheetData = this.analysisInterface.state.sheetData || {
+            sheets: [{ title: notesData.title || 'Deck Notes', sheetId: notesData.sheetId, values }]
+        };
+        const { deckNotesMap, columnMap } = processDeckNotes(sheetData);
+        this.columnMap = columnMap;
+        this.values = values;
+        this.analysisInterface.state.setDeckNotes(deckNotesMap, columnMap);
+
+        this.deckIndex = 0;
+        this._regroup();
+        if (startDeckString) {
+            this.jumpToDeckString(startDeckString);
         }
 
-        // Check if we need hover preview for cards
-        const pointerType = this.uiController.getPointerType();
-        let needHoverPreview = true;
-        if (pointerType === 'touch' || pointerType === 'pen') {
-            // Disable hover preview for touch/pen devices
-            needHoverPreview = false;
+        if (!this.view.ensureScreen()) {
+            this.uiController.showStatus('Could not open the deck notes screen.', 'error');
+            return;
         }
 
-        deckNotesContainer.innerHTML = `
-            <div class="deck-notes-editor">
-                <div class="deck-notes-editor-header">
-                    <div class="deck-notes-editor-controls">
-                        <button id="deck-notes-close-btn" class="exit-btn">X</button>
-                    </div>
-                    <h3>Deck Notes Editor</h3>
-                </div>
-                <div class="deck-notes-editor-publish">
-                    <button id="deck-notes-publish-btn" class="primary-btn">Start guruing</button>
-                </div>
-                <h4>${spreadsheetTitle}</h4>
-                <p>All goldfish clocks must be filled before guruing can begin. Add notes as needed.</p>
-                <table id="deck-notes-table" class="deck-notes-table">
-                    <thead>
-                        <tr>
-                            ${headersClean.map((header, index) => `
-                                <th header="${header}">${headers[index]}</th>
-                            `).join('')}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${notes.slice(1).map((row, rowIndex) => {
-                            const paddedRow = [...row];
-                            while (paddedRow.length < numCols) paddedRow.push("");
-                            const decklist = paddedRow[0] || '';
-                            const cards = this.scryfallAPI.parseDeckString(decklist);
-                            // Preload cards for hover preview
-                            if (needHoverPreview) this.scryfallAPI.preloadCards(decklist);
-                            // If the first cell is a deck string, show it as a list of cards with hover preview and Scryfall link
-                            if (cards.length > 0) {
-                                paddedRow[0] = `${cards.map(card => {
-                                    const scryfallUrl = this.scryfallAPI.getCardUrl(card);
-                                    return `<a href="${scryfallUrl}" target="_blank" rel="noopener noreferrer" class="deck-card-link"><li class="deck-card" data-card-name="${card}">${card}</li></a>`;
-                                }).join('')}`;
-                            }
-                            return `<tr>` +
-                                `<td class="deck-cards-list" data-row="${rowIndex + 1}" data-col="0"><ul>${paddedRow[0]}</ul></td>` +
-                                // row-col Index here are offset by 1, so add 1 to get the real index in the data
-                                paddedRow.slice(1).map((cell, colIndex) => {
-                                    const header = headersClean[colIndex+1];
-                                    const editable = header !== 'signature';
-                                    const classList = editable ? 'editable pulled' : 'pulled';
-                                    return `<td class="${classList}" contenteditable="${editable}" data-row="${rowIndex + 1}" data-col="${colIndex+1}" header="${header}">${cell}</td>`;
-                                }).join('') +
-                                `</tr>`;
-                        }).join('')}
-                    </tbody>
-                </table>
-            </div>
-        `;
+        this._clockMessageShown = allClocksFilled(this.entries, this.columnMap);
+        this.renderCurrent();
 
-        const deckNotesTable = deckNotesContainer.querySelector('#deck-notes-table');
-        if (deckNotesTable) {
-            // Make Enter key submit the cell edit
-            deckNotesTable.addEventListener('keydown', function(e) {
-                if (e.target.isContentEditable && e.key === 'Enter') {
-                    e.preventDefault();
-                    e.target.blur();
-                }
-            });
-
-            const onCellEditFinished = async (e) => {
-                const content = e.target.textContent;
-                const row = e.target.dataset.row;
-                const col = e.target.dataset.col;
-                const oldContent = (notes[row] && notes[row][col]) ? notes[row][col] : '';
-                if (content === oldContent) {
-                    // No change, do nothing
-                    return;
-                }
-                console.log(`Cell edited: Row ${row}, Col ${col}, Content: "${content}"`);
-
-                // Do a checked update to save the edited cell
-                const updates = {
-                    updates: [{
-                        sheetId: this.notesData.sheetId,
-                        row: parseInt(row) + 1, // +1 because sheets are 1-indexed
-                        col: parseInt(col) + 1, // +1 because sheets are 1-indexed
-                        value: content,
-                        expectedValue: oldContent, // Only update if current value matches old content
-                        valueType: 'auto-detect',
-                    }]
-                };
-                const result = await this.sheetsAPI.checkedUpdateSheetData(this.spreadsheetID, updates);
-                if (!result || result.skippedCells > 0) {
-                    this.uiController.showStatus('Cell update failed, content may have been changed by someone else.', 'info');
-                } else {
-                    this.notesData.values[row][col] = content; // Update local notes data
-                    if (headers[col] == 'Goldfish Clock' && headers.includes('Signature')) {
-                        // Update the signature in the spreadsheet
-                        const signatureCol = headers.indexOf('Signature');
-                        const signature = this.analysisInterface.guruSignature;
-                        const signatureUpdates = {
-                            updates: [{
-                                sheetId: this.notesData.sheetId,
-                                row: parseInt(row) + 1, // +1 because sheets are 1-indexed
-                                col: signatureCol + 1, // +1 because sheets are 1-indexed
-                                value: signature,
-                                valueType: 'string',
-                            }]
-                        };
-                        await this.sheetsAPI.updateSheetData(this.spreadsheetID, signatureUpdates);
-                        this.notesData.values[row][signatureCol] = signature;
-                        // Update the signature in the UI
-                        const signatureCell = deckNotesTable.querySelector(`td[data-row="${row}"][data-col="${signatureCol}"]`);
-                        if (signatureCell) {
-                            signatureCell.textContent = signature;
-                        }
-                    }
-                }
-            };
-
-            // Attach to all editable cells
-            deckNotesTable.querySelectorAll('.editable').forEach(cell => {
-                cell.addEventListener('blur', onCellEditFinished);
-            });
-
-            // Card hover image preview logic
-            let cardPreviewImg = null;
-            let previewTimeout = null;
-            // Mouse enter handler
-            const mouseEnterHandler = async (e) => {
-                const cardDiv = e.target.closest('.deck-card');
-                if (cardDiv && cardDiv.dataset.cardName) {
-                    // Delay preview to avoid accidental flicker
-                    previewTimeout = setTimeout(async () => {
-                        // Only show one preview at a time
-                        if (cardPreviewImg) cardPreviewImg.remove();
-                        try {
-                            const cardName = cardDiv.dataset.cardName;
-                            cardPreviewImg = await this.scryfallAPI.getCardImage(cardName);
-                        } catch (err) {
-                            cardPreviewImg = document.createElement('img');
-                            cardPreviewImg.src = '';
-                            cardPreviewImg.alt = 'Image not found';
-                        }
-                        cardPreviewImg.className = 'card-hover-preview';
-
-                        // Position near mouse
-                        const imgWidth = 320;  // match your maxWidth
-                        const imgHeight = 440; // match your maxHeight
-                        const padding = 12;
-                        let left = e.clientX + 18;
-                        let top = e.clientY - 20;
-
-                        // Clamp right edge
-                        if (left + imgWidth + padding > window.innerWidth) {
-                        left = window.innerWidth - imgWidth - padding;
-                        }
-                        // Clamp left edge
-                        if (left < padding) left = padding;
-
-                        // Clamp bottom edge
-                        if (top + imgHeight + padding > window.innerHeight) {
-                        top = window.innerHeight - imgHeight - padding;
-                        }
-                        // Clamp top edge
-                        if (top < padding) top = padding;
-
-                        cardPreviewImg.style.left = left + 'px';
-                        cardPreviewImg.style.top = top + 'px';
-
-                        document.body.appendChild(cardPreviewImg);
-
-                        // Remove on mouseleave
-                        const removePreview = () => {
-                            if (cardPreviewImg) cardPreviewImg.remove();
-                            cardPreviewImg = null;
-                        };
-                        cardDiv.addEventListener('mouseleave', removePreview, { once: true });
-                    }, 200); // 200ms delay
-                }
-            };
-            // Mouse leave handler
-            const mouseLeaveHandler = (e) => {
-                if (previewTimeout) {
-                    clearTimeout(previewTimeout);
-                    previewTimeout = null;
-                }
-                if (cardPreviewImg) {
-                    cardPreviewImg.remove();
-                    cardPreviewImg = null;
-                }
-            };
-
-            deckNotesTable.addEventListener('mouseenter', mouseEnterHandler, true);
-            deckNotesTable.addEventListener('mouseleave', mouseLeaveHandler, true);
-        }
-        // Add close button functionality
-        const closeBtn = deckNotesContainer.querySelector('#deck-notes-close-btn');
-        if (closeBtn) {
-            closeBtn.addEventListener('click', () => this.close(true));
-        }
-
-        // Add publish button functionality
-        const publishBtn = deckNotesContainer.querySelector('#deck-notes-publish-btn');
-        if (publishBtn) {
-            publishBtn.addEventListener('click', () => this.unhideGuruSheets());
-        }
-
-        if (!this.allClocksFilled()) {
-            // Hide publish button if clocks are not filled
-            publishBtn.style.display = 'none';
-        }
-
-        // Insert the deck notes container in the "sheet-editor" area
-        const sheetEditor = document.getElementById('sheet-editor');
-        sheetEditor.insertBefore(deckNotesContainer, sheetEditor.firstChild);
-
-        // Hide the guru analysis interface while the deck notes editor is open
-        const analysisInterfaceEl = document.getElementById('guru-analysis-interface');
-        if (analysisInterfaceEl) {
-            analysisInterfaceEl.style.display = 'none';
-        }
-
-        // Set up periodic updates
-        if (this._updateInterval) {
-            clearInterval(this._updateInterval);
-        }
+        this.stopPeriodicUpdate();
         this._updateInterval = setInterval(() => {
             if (this.notesData) {
                 this.pullUpdates();
@@ -276,41 +108,156 @@ export class DeckNotesEditor {
         }, 3000);
     }
 
-    allClocksFilled() {
-        // Check if all goldfish clocks are filled
-        const notes = this.notesData.values || [];
-        for (let i = 1; i < notes.length; i++) { // Skip header row
-            const row = notes[i];
-            if (!row || !row[1]) {
-                return false; // Found an empty clock
-            }
+    /** Jump to the entry for a Player 1 deck string, if present. */
+    jumpToDeckString(deckString) {
+        if (!deckString) {
+            return;
         }
-        if (!this.clocksFilled) {
-            this.clocksFilled = true;
-            this.uiController.showStatus('All goldfish clocks are filled. You can now start guruing!', 'success');
+        const index = this.entries.findIndex(entry => entry.deckString === deckString);
+        if (index >= 0) {
+            this.deckIndex = index;
         }
-        return true; // All clocks are filled
     }
 
-    async pullUpdates() {
-        // Pull updates from the Google Sheets API
-        const notesData = await this.sheetsAPI.getDeckNotes(this.spreadsheetID, this.notesData);
-        await this.updateValues(notesData);
+    /** Grouped deck list as a jump-to-deck table, opened from the header. */
+    async showDeckTable() {
+        await this.deckTablePresenter.open({
+            entries: this.entries,
+            currentRow: this.deckIndex,
+            signature: this.analysisInterface.state.signature || '',
+            onSelect: (idx) => {
+                if (idx >= 0 && idx < this.entries.length) {
+                    this.deckIndex = idx;
+                    this.renderCurrent();
+                }
+            }
+        });
+    }
+
+    /** Rebuild the grouped entries from the current values, keeping position. */
+    _regroup() {
+        const anchor = this.entries[this.deckIndex];
+        this.entries = groupDeckNotes(this.values, this.columnMap);
+        this.analysisInterface.state.setDeckNotesEntries(this.entries, this.values);
+
+        if (anchor) {
+            const index = this.entries.findIndex(
+                entry => entry.deckString === anchor.deckString && entry.row === anchor.row
+            );
+            if (index >= 0) {
+                this.deckIndex = index;
+            }
+        }
+        if (this.deckIndex >= this.entries.length) {
+            this.deckIndex = Math.max(0, this.entries.length - 1);
+        }
+    }
+
+    /** Render the header, the current deck's cards and its info panel. */
+    async renderCurrent() {
+        if (!this.entries.length) {
+            this.uiController.showStatus('No decks found in the notes sheet.', 'error');
+            return;
+        }
+
+        const entry = this.entries[this.deckIndex];
+        const total = this.entries.length;
+
+        this.view.renderHeader({
+            spreadsheetId: this.spreadsheetId,
+            sheetTitle: this.sheetTitle,
+            podName: this.analysisInterface.state.sheetData?.metadata?.podName
+        });
+
+        this.view.renderDeck({
+            deckString: entry.deckString,
+            deckInfo: entry.deckInfo,
+            index: this.deckIndex,
+            total,
+            clockSignature: entry.signatures,
+            onSaveField: async (deck, type, oldValue, newValue, span) => {
+                await this.analysisInterface.saveDeckInfoField(deck, type, oldValue, newValue, span, entry);
+                // A clock edit can flip the gate, so refresh the controls.
+                this.renderChrome();
+            }
+        });
+
+        this.renderChrome();
+        this._renderCards(entry.deckString);
+    }
+
+    renderChrome() {
+        const canStart = allClocksFilled(this.entries, this.columnMap);
+        this.view.renderProgress(this.deckIndex, this.entries.length);
+        this.view.renderClockProgress(deckNotesProgress(this.entries));
+        this.view.renderNavigation({
+            index: this.deckIndex,
+            total: this.entries.length,
+            canStart,
+            showBack: this.fromAnalysis
+        });
+
+        if (canStart && !this._clockMessageShown) {
+            this._clockMessageShown = true;
+            this.uiController.showStatus('All goldfish clocks are filled. You can now start guruing!', 'success');
+        }
+    }
+
+    async _renderCards(deckString) {
+        // Warm the decks the guru is likely to open next (adjacent entries and
+        // the next clock-less deck) rather than the current one, which
+        // loadPlayerCards fetches directly. The ScryfallAPI cache is shared with
+        // the analysis screen, so these cards are already in cache when the
+        // session hands off.
+        const neighbours = decksToPreload(this.entries, this.deckIndex);
+        if (neighbours.length) {
+            this.scryfallAPI.preloadCards(neighbours, { delay: 300, silent: true });
+        }
+        // The view's card container is #deck-notes-cards, i.e. playerId 'deck-notes'.
+        await this.cards.loadPlayerCards('deck-notes', deckString);
+    }
+
+    async previousDeck() {
+        if (this.deckIndex > 0) {
+            this.deckIndex--;
+            await this.renderCurrent();
+        }
+    }
+
+    async nextDeck() {
+        if (this.deckIndex < this.entries.length - 1) {
+            this.deckIndex++;
+            await this.renderCurrent();
+        }
+    }
+
+    /** Jump to the next deck with an empty clock, wrapping to the first. */
+    async nextWithoutClock() {
+        const count = this.entries.length;
+        for (let offset = 1; offset <= count; offset++) {
+            const index = (this.deckIndex + offset) % count;
+            if (!this.entries[index].deckInfo?.goldfishClock) {
+                this.deckIndex = index;
+                await this.renderCurrent();
+                return;
+            }
+        }
+        this.uiController.showStatus('Every clock is filled.', 'success');
+    }
+
+    /** Gate action: unhide the guru sheets and enter analysis. */
+    async startGuruing() {
+        if (!allClocksFilled(this.entries, this.columnMap)) {
+            this.uiController.showStatus('All goldfish clocks must be filled before guruing can begin.', 'info');
+            return;
+        }
+        await this.unhideGuruSheets();
     }
 
     close(backToHome = false) {
-        // Remove the deck notes editor from the DOM and stop updates
-        const deckNotesContainer = document.getElementById('deck-notes-screen');
-        if (deckNotesContainer && deckNotesContainer.parentNode) {
-            deckNotesContainer.parentNode.removeChild(deckNotesContainer);
-        }
         this.stopPeriodicUpdate();
-        
-        // Restore the guru analysis interface visibility when closing the deck notes editor
-        const analysisInterfaceEl = document.getElementById('guru-analysis-interface');
-        if (analysisInterfaceEl) {
-            analysisInterfaceEl.style.display = '';
-        }
+        this.deckTableModal.close();
+        this.view.destroy();
 
         if (backToHome) {
             this.uiController.showSheetInputSection();
@@ -322,57 +269,32 @@ export class DeckNotesEditor {
             clearInterval(this._updateInterval);
             this._updateInterval = null;
         }
-    }   
+    }
 
-    async updateValues(notesData) {
-        // Update the deck notes table with new data
-        const deckNotesTable = document.getElementById('deck-notes-table');
-        if (!deckNotesTable) return;
+    /** Re-fetch the notes sheet and re-render without losing the current deck. */
+    async pullUpdates() {
+        const updated = await this.sheetsAPI.getDeckNotes(this.spreadsheetId, this.notesData);
+        if (!updated?.values?.length) {
+            return;
+        }
+        this.notesData = updated;
+        this.values = updated.values;
+        this._regroup();
 
-        const notes = notesData.values || [];
-
-        // Loop through pulled data cells and update their content
-        deckNotesTable.querySelectorAll('.pulled').forEach((cell) => {
-            const row = cell.dataset.row;
-            const col = cell.dataset.col;
-            // check if cell content has changed
-            const newData = (notesData.values[row] && notesData.values[row][col]) ? notesData.values[row][col] : '';
-            const oldData = (this.notesData.values[row] && this.notesData.values[row][col]) ? this.notesData.values[row][col] : '';
-            if (newData !== oldData) {
-                cell.textContent = newData;
-                this.notesData.values[row][col] = newData; // Update local notes data
-                // If the cell is focused, blur it to discard any user edits
-                if (document.activeElement === cell) {
-                    cell.blur();
-                }
-                // Briefly highlight the updated cell
-                cell.classList.add('updated');
-                setTimeout(() => {
-                    cell.classList.remove('updated');
-                }, 300);
-            }
-        });
-
-        const publishBtn = document.getElementById('deck-notes-publish-btn');
-        if (this.allClocksFilled()) {
-            // Show publish button if all clocks are filled
-            if (publishBtn) {
-                publishBtn.style.display = 'block';
-            }
-        } else {
-            // Hide publish button if clocks are not filled
-            if (publishBtn) {
-                publishBtn.style.display = 'none';
-            }
+        // A re-render would tear out an in-progress inline edit, so hold off
+        // while the guru is typing.
+        if (this.view.screen && !isDeckInfoEditing(getElement('deck-notes-deck-info'))) {
+            await this.renderCurrent();
         }
     }
 
     async unhideGuruSheets() {
-        // Unhide the Guru sheets in the spreadsheet and move to the analysis interface
-        await this.sheetsAPI.unhideGuruSheets(this.spreadsheetID);
-        this.close();
+        await this.sheetsAPI.unhideGuruSheets(this.spreadsheetId);
+        // Hand off to the analysis session, which will re-fetch the now-visible
+        // sheets and render the scoring screen.
+        this.close(false);
 
-        const sheetData = await this.sheetsAPI.getSheetData(this.spreadsheetID);
+        const sheetData = await this.sheetsAPI.getSheetData(this.spreadsheetId);
         this.analysisInterface.loadData(sheetData);
     }
 }

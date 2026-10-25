@@ -2,9 +2,10 @@ import { GoogleSheetsAPI } from './modules/googleSheetsAPI.js';
 import { UIController } from './modules/uiController.js';
 import { AuthManager } from './modules/authManager.js';
 import { GuruSignature } from './modules/guruSignature.js';
-import { GuruAnalysisInterface } from './modules/guruAnalysisInterface.js';
+import { AnalysisController } from './ui/analysisController.js';
 import { RecentPodsManager } from './modules/recentPods.js';
 import { CONFIG, DEPLOYMENTS } from './config.js';
+import { EventBus, APP_EVENTS } from './app/events.js';
 import {
     isValidGoogleSheetsUrl,
     extractSheetId,
@@ -13,22 +14,63 @@ import {
     alternateDeploymentUrl,
     resolveDeploymentRedirect
 } from './utils/urlUtils.js';
+import { logger, getLogEntries, isDebugEnabled } from './utils/log.js';
+import { formatDiagnosticLog, logFilename } from './domain/diagnosticLog.js';
+import { getElement } from './utils/domUtils.js';
+import { getItem, setItem, removeItem } from './services/storage.js';
 
 class ThreeCardBlindGuruTool {
     constructor() {
-        this.authManager = new AuthManager();
-        this.guruSignature = new GuruSignature(this.authManager);
+        // One local bus for the login / logout / signature flow, replacing the
+        // window CustomEvents and the boolean guard flags (phase 4 of #18).
+        this.events = new EventBus();
+        this.authManager = new AuthManager(this.events);
+        this.guruSignature = new GuruSignature(this.authManager, this.events);
+        // Hand the owner to the components that need it, so nothing else keeps
+        // a copy of the signature (phase 5 of #18).
+        this.authManager.guruSignature = this.guruSignature;
         this.sheetsAPI = new GoogleSheetsAPI(this.authManager);
-        this.uiController = new UIController();
+        this.uiController = new UIController(this.guruSignature);
         this.analysisInterface = null; // Initialized after auth
         this.recentPodsManager = new RecentPodsManager();
 
         this.currentSheetData = null;
-        this.currentSheetId = null;
-        this.handlersSetup = false; // Track if handlers have been set up
-        this.authSectionRendered = false; // Track if auth section has been rendered
-        
+        this.currentSpreadsheetId = null;
+        this._domBound = false;
+        this._signatureHandlersBound = false;
+        this._logDownloadBound = false;
+        this._appVersion = 'unknown';
+
+        this.setupEventSubscriptions();
         this.init();
+    }
+
+    /**
+     * Subscribe to the app events. Registration happens exactly once per page
+     * load; the handlers themselves are written to be safe to re-run.
+     */
+    setupEventSubscriptions() {
+        this.events.on(APP_EVENTS.USER_LOGGED_IN, () => this.onUserLoggedIn());
+        this.events.on(APP_EVENTS.USER_LOGGED_OUT, () => this.clearLocalPreferences());
+    }
+
+    /**
+     * Bring the authenticated session to life: render the signed-in chrome,
+     * wire handlers once, and pull the persisted signature / recent pods in.
+     */
+    async onUserLoggedIn() {
+        this.authManager.renderAuthSection();
+        this.authManager.showAppContent();
+
+        this.setupGuruSignatureHandlers();
+        this.bindEvents();
+
+        if (this.authManager.userPreferences && this.authManager.userPreferences.isInitialized) {
+            // The single owner loads the persisted signature and updates the UI.
+            await this.guruSignature.initSignature();
+            // setUserPreferences already loads and renders recent pods/hubs
+            this.recentPodsManager.setUserPreferences(this.authManager.userPreferences);
+        }
     }
 
     async init() {
@@ -42,40 +84,18 @@ class ThreeCardBlindGuruTool {
 
             // Show loading while initializing
             this.showLoading('Initializing application...');
-            
-            // Set up event listeners first, before any authentication
-            this.setupPreferencesHandlers();
-            
+
             // Check authentication status
             const isAuthenticated = await this.authManager.checkAuthStatus();
-            
+
             // Hide loading after checking authentication
             this.hideLoading();
-            
-            if (isAuthenticated) {
-                this.authManager.renderAuthSection();
-                this.authManager.showAppContent();
-                this.authSectionRendered = true; // Mark as rendered
-                
-                // Only set up handlers once
-                if (!this.handlersSetup) {
-                    this.setupGuruSignatureHandlers();
-                    this.bindEvents();
-                    this.handlersSetup = true;
-                }
 
-                // Try to initialize the guru signature from persisted preferences so it's
-                // available immediately after login (avoids race where loadSheet blocks)
-                try {
-                    if (this.authManager.userPreferences) {
-                        const persistedSig = await this.authManager.userPreferences.getGuruSignature();
-                        if (persistedSig && persistedSig.trim() !== '') {
-                            await this.guruSignature.initSignature(persistedSig);
-                        }
-                    }
-                } catch (err) {
-                    console.warn('Could not initialize guru signature from preferences:', err);
-                }
+            if (isAuthenticated) {
+                // Bring the session up directly; on a restored session the login
+                // event also fires on a short delay, and onUserLoggedIn is safe
+                // to run more than once.
+                await this.onUserLoggedIn();
 
                 // Check if we should go directly to analysis mode based on URL parameters
                 const hasUrlParameters = await this.checkForDirectAnalysisMode();
@@ -90,16 +110,16 @@ class ThreeCardBlindGuruTool {
                 }
             } else {
                 // User is not authenticated, show login screen
-                console.log('User not authenticated, showing login screen');
+                logger.debug('User not authenticated, showing login screen');
                 this.authManager.showLoginScreen();
             }
         } catch (error) {
-            console.error('Error initializing application:', error);
+            logger.error('Error initializing application:', error);
             this.hideLoading();
             this.uiController.showStatus('Error initializing Google API. Please refresh the page.', 'error');
         }
     }
-    
+
     currentDeploymentKey() {
         return deploymentForPath(window.location.pathname, DEPLOYMENTS);
     }
@@ -109,14 +129,14 @@ class ThreeCardBlindGuruTool {
      * when a redirect was started (the caller must stop initialising).
      */
     applyDeploymentPreference() {
-        const preferred = localStorage.getItem(CONFIG.STORAGE_KEYS.PREFERRED_DEPLOYMENT);
+        const preferred = getItem(CONFIG.STORAGE_KEYS.PREFERRED_DEPLOYMENT);
         const target = resolveDeploymentRedirect(
             window.location.pathname, window.location.search, preferred, DEPLOYMENTS
         );
         if (!target) {
             return false;
         }
-        console.log(`🔀 Redirecting to preferred deployment: ${target}`);
+        logger.debug(`🔀 Redirecting to preferred deployment: ${target}`);
         window.location.replace(target);
         return true;
     }
@@ -129,11 +149,68 @@ class ThreeCardBlindGuruTool {
         if (!Object.prototype.hasOwnProperty.call(DEPLOYMENTS, key)) {
             return;
         }
-        localStorage.setItem(CONFIG.STORAGE_KEYS.PREFERRED_DEPLOYMENT, key);
+        setItem(CONFIG.STORAGE_KEYS.PREFERRED_DEPLOYMENT, key);
+    }
+
+    /**
+     * Wire the shared "Download log" handler once, on load and independently of
+     * auth. The footer button is the only escape hatch on the login / sheet-input
+     * screens, so it must work even if authentication never completes.
+     */
+    setupLogDownload() {
+        if (this._logDownloadBound) {
+            return;
+        }
+        this._logDownloadBound = true;
+        document.addEventListener('click', (event) => {
+            if (event.target.closest('[data-log-download]')) {
+                this.downloadDiagnosticLog();
+            }
+        });
+    }
+
+    /**
+     * Build the diagnostic text from the buffered log and save it as a `.txt`
+     * file. Client-side and user-initiated; the URL is revoked after the click.
+     */
+    downloadDiagnosticLog() {
+        const key = this.currentDeploymentKey();
+        const meta = {
+            generatedAt: new Date(),
+            version: this._appVersion,
+            deploymentLabel: key ? DEPLOYMENTS[key].label : '',
+            url: window.location.href,
+            userAgent: navigator.userAgent,
+            debug: isDebugEnabled()
+        };
+        const text = formatDiagnosticLog(getLogEntries(), meta);
+        const blob = new Blob([text], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = logFilename();
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+    }
+
+    /**
+     * Record uncaught errors and unhandled rejections so crashes are in the
+     * diagnostic buffer even when nothing logged them explicitly.
+     */
+    setupGlobalErrorCapture() {
+        window.addEventListener('error', (event) => {
+            logger.error('Uncaught error:', event.message, event.filename, event.lineno, event.colno, event.error);
+        });
+        window.addEventListener('unhandledrejection', (event) => {
+            logger.error('Unhandled rejection:', event.reason);
+        });
     }
 
     setupDeploymentSwitch() {
-        const container = document.getElementById('deployment-switch');
+        const container = getElement('deployment-switch');
         if (!container) {
             return;
         }
@@ -167,47 +244,12 @@ class ThreeCardBlindGuruTool {
         container.append(note, button);
     }
 
-    setupPreferencesHandlers() {
-        // Listen for user login
-        window.addEventListener('userLoggedIn', async () => {
-            console.log('User logged in');
-            
-            // Only render auth section if it hasn't been rendered yet during initialization
-            // This prevents duplicate rendering when user is already authenticated
-            if (!this.authSectionRendered) {
-                this.authManager.renderAuthSection();
-                this.authManager.showAppContent();
-                this.authSectionRendered = true;
-            }
-            
-            // Only set up handlers once
-            if (!this.handlersSetup) {
-                this.setupGuruSignatureHandlers();
-                this.bindEvents();
-                this.handlersSetup = true;
-            }
-            
-            // Initialize user preferences and connect to recent pods manager
-            if (this.authManager.userPreferences && this.authManager.userPreferences.isInitialized) {
-                this.guruSignature.initSignature(await this.authManager.userPreferences.getGuruSignature());
-                // setUserPreferences already loads and renders recent pods/hubs
-                this.recentPodsManager.setUserPreferences(this.authManager.userPreferences);
-            }
-        });
-        // Clear preferences on logout
-        window.addEventListener('userLoggedOut', () => {
-            this.clearLocalPreferences();
-            this.handlersSetup = false; // Reset handlers flag so they can be set up again on next login
-            this.authSectionRendered = false; // Reset auth section flag
-        });
-    }
-
     /**
      * Show simple loading indicator under header
      */
     showLoading(message = 'Loading...') {
-        const loadingElement = document.getElementById('app-loading');
-        const loadingText = document.getElementById('loading-text');
+        const loadingElement = getElement('app-loading');
+        const loadingText = getElement('loading-text');
         if (loadingElement && loadingText) {
             loadingText.textContent = message;
             loadingElement.style.display = 'flex';
@@ -218,7 +260,7 @@ class ThreeCardBlindGuruTool {
      * Hide loading indicator
      */
     hideLoading() {
-        const loadingElement = document.getElementById('app-loading');
+        const loadingElement = getElement('app-loading');
         if (loadingElement) {
             loadingElement.style.display = 'none';
         }
@@ -226,50 +268,64 @@ class ThreeCardBlindGuruTool {
 
     clearLocalPreferences() {
         // Clear local storage
-        localStorage.removeItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE);
-        localStorage.removeItem(CONFIG.STORAGE_KEYS.RECENT_PODS);
-        localStorage.removeItem(CONFIG.STORAGE_KEYS.RECENT_HUBS);
-        console.log('🗑️ Cleared local preferences from localStorage');
+        removeItem(CONFIG.STORAGE_KEYS.GURU_SIGNATURE);
+        removeItem(CONFIG.STORAGE_KEYS.RECENT_PODS);
+        removeItem(CONFIG.STORAGE_KEYS.RECENT_HUBS);
+        logger.debug('🗑️ Cleared local preferences from localStorage');
     }
 
     setupGuruSignatureHandlers() {
-        // Listen for signature events
+        if (this._signatureHandlersBound) {
+            return;
+        }
+        this._signatureHandlersBound = true;
+
+        // Listen for the signature being set (initial load or an explicit change).
         this.guruSignature.onSignatureSet((signature) => {
-            console.log('Guru signature set:', signature);
+            logger.debug('Guru signature set:', signature);
             this.uiController.showStatus(`Welcome, ${signature}! Ready to edit pod sheets.`, 'success');
-        });
-        this.guruSignature.onSignatureChanged((signature) => {
-            console.log('Guru signature changed:', signature);
-            if (!signature) {
-                this.uiController.showStatus('Please set your Guru Signature to continue.', 'info');
-            }
+            // A change while a pod is open must not leave a stale snapshot behind.
+            this.refreshSignatureForOpenPod();
         });
     }
 
+    /**
+     * If a pod is open, adopt the (now changed) signature: close the pod and
+     * return home so the next load resolves the colour and rows against the new
+     * value. The signature is session identity, not live per-row state.
+     */
+    refreshSignatureForOpenPod() {
+        if (!this.currentSpreadsheetId) {
+            return;
+        }
+        this.analysisInterface?.destroy();
+        this.analysisInterface = null;
+        this.currentSheetData = null;
+        this.currentSpreadsheetId = null;
+        this.uiController.showSheetInputSection();
+    }
+
     bindEvents() {
-        const loadBtn = document.getElementById('load-sheet-btn');
-        const refreshBtn = document.getElementById('refresh-btn');
-        const exitAnalysisBtn = document.getElementById('exit-analysis-btn');
-        const sheetUrlInput = document.getElementById('sheet-url');
+        if (this._domBound) {
+            return;
+        }
+        this._domBound = true;
+
+        const loadBtn = getElement('load-sheet-btn');
+        const refreshBtn = getElement('refresh-btn');
+        const exitAnalysisBtn = getElement('exit-analysis-btn');
+        const sheetUrlInput = getElement('sheet-url');
 
         loadBtn.addEventListener('click', () => this.loadSheet());
         refreshBtn.addEventListener('click', () => this.refreshSheet());
         exitAnalysisBtn.addEventListener('click', () => this.uiController.showSheetInputSection());
         this.setupDeploymentSwitch();
-        
+
         // Allow Enter key to trigger load
         sheetUrlInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 this.loadSheet();
             }
-        });
-
-        // Listen for user logout to optionally handle recent pods
-        window.addEventListener('userLoggedOut', () => {
-            // Note: We keep recent pods even after logout so they're available when user logs back in
-            // If you want to clear them on logout, uncomment the next line:
-            // this.recentPodsManager.clearRecentPods();
-            console.log('📋 User logged out - keeping recent pods for next session');
         });
     }
 
@@ -277,21 +333,21 @@ class ThreeCardBlindGuruTool {
         const urlParams = new URLSearchParams(window.location.search);
         const podId = sanitizeUrlParam(urlParams.get('pod'));
         const hubId = sanitizeUrlParam(urlParams.get('hub'));
-        
+
         if (podId) {
-            console.log('🔗 URL parameters detected, going directly to analysis mode');
-            
+            logger.debug('🔗 URL parameters detected, going directly to analysis mode');
+
             // Hide the home screen sections
             this.uiController.hideHomeScreen();
-            
+
             // Handle URL parameters for auto-loading (includes hub if present)
             await this.handleURLParameters();
-            
+
             return true; // Indicates we went to analysis mode
         } else if (hubId) {
             await this.handleURLParameters();
         }
-        
+
         return false; // No URL parameters, use normal flow
     }
 
@@ -301,32 +357,32 @@ class ThreeCardBlindGuruTool {
         const guruColor = sanitizeUrlParam(urlParams.get('guru'));
         const hubId = sanitizeUrlParam(urlParams.get('hub'));
         let rowNumber = sanitizeUrlParam(urlParams.get('match'));
-        
+
         // If hub parameter is present, add it to recent hubs before rendering
         if (hubId) {
             try {
-                console.log(`🔗 Adding hub from URL parameter: ${hubId}`);
+                logger.debug(`🔗 Adding hub from URL parameter: ${hubId}`);
                 await this.recentPodsManager.addRecentHub(hubId);
             } catch (error) {
-                console.warn('Failed to add hub from URL parameter:', error);
+                logger.warn('Failed to add hub from URL parameter:', error);
             }
         }
-        
+
         if (podId) {
             try {
-                console.log(`🔗 Auto-loading pod from URL: ${podId}, color: ${guruColor}, row: ${rowNumber}`);
-                
+                logger.debug(`🔗 Auto-loading pod from URL: ${podId}, color: ${guruColor}, row: ${rowNumber}`);
+
                 this.showLoading('Loading pod data...');
                 // Load the pod by ID
                 await this.loadSheet(podId, guruColor, rowNumber ? parseInt(rowNumber, 10) : null);
-                
+
                 this.hideLoading();
-                
+
             } catch (error) {
-                console.warn('Failed to auto-load pod from URL:', error);
+                logger.warn('Failed to auto-load pod from URL:', error);
                 this.hideLoading();
                 this.uiController.showStatus(`Could not load pod from URL: ${error.message}`, 'error');
-                
+
                 // Clear invalid pod ID from URL
                 this.clearInvalidURLParameters();
             }
@@ -339,22 +395,22 @@ class ThreeCardBlindGuruTool {
         window.history.replaceState({}, '', newUrl);
     }
 
-    async loadSheet(sheetId = null, guruColor = null, rowNumber = null) {
+    async loadSheet(spreadsheetId = null, guruColor = null, rowNumber = null) {
         // Check if guru signature is set before loading sheet
         if (!this.guruSignature.hasSignature()) {
-            console.warn('Guru signature not set, cannot load sheet');
+            logger.warn('Guru signature not set, cannot load sheet');
             this.uiController.showStatus('Please set your Guru Signature before loading a sheet', 'error');
             this.guruSignature.showSignatureSection();
             return;
         }
 
-        let targetSheetId = sheetId;
+        let targetSpreadsheetId = spreadsheetId;
         let sheetUrl = '';
-        
-        // If no sheetId provided, get it from the URL input
-        if (!targetSheetId) {
-            const url = document.getElementById('sheet-url').value.trim();
-            
+
+        // If no spreadsheetId provided, get it from the URL input
+        if (!targetSpreadsheetId) {
+            const url = getElement('sheet-url').value.trim();
+
             if (!url) {
                 this.uiController.showStatus('Please enter a pod Google Sheets URL', 'error');
                 return;
@@ -364,49 +420,52 @@ class ThreeCardBlindGuruTool {
                 this.uiController.showStatus('Please enter a valid Google Sheets URL', 'error');
                 return;
             }
-            
-            targetSheetId = extractSheetId(url);
+
+            targetSpreadsheetId = extractSheetId(url);
             sheetUrl = url;
         } else {
-            // Construct URL from sheet ID for recent pods functionality
-            sheetUrl = `https://docs.google.com/spreadsheets/d/${targetSheetId}`;
+            // Construct URL from the spreadsheet ID for recent pods functionality
+            sheetUrl = `https://docs.google.com/spreadsheets/d/${targetSpreadsheetId}`;
         }
 
         try {
             this.uiController.showStatus('Loading pod...', 'loading');
             this.uiController.setLoadingState(true);
 
-            const sheetData = await this.sheetsAPI.getSheetData(targetSheetId);
-            
+            const sheetData = await this.sheetsAPI.getSheetData(targetSpreadsheetId);
+
             this.currentSheetData = sheetData;
-            this.currentSheetId = targetSheetId;
-            
+            this.currentSpreadsheetId = targetSpreadsheetId;
+
             // Load data into the analysis interface
             if (!this.analysisInterface) {
-                this.analysisInterface = new GuruAnalysisInterface(this.sheetsAPI, this.uiController, this.authManager.guruSignature);
+                // The signature is a snapshot taken at load: it cannot change
+                // while a pod is open (phase 5 of #18).
+                this.analysisInterface = new AnalysisController(
+                    this.sheetsAPI, this.uiController, this.guruSignature.getSignature()
+                );
             } else {
                 this.analysisInterface.reset();
-                this.analysisInterface.setGuruSignature(this.authManager.guruSignature);
             }
             const isLoaded = await this.analysisInterface.loadData(sheetData, guruColor, rowNumber);
-            this.uiController.showSheetEditor(sheetData.title || 'Untitled Pod', targetSheetId);
+            this.uiController.showSheetEditor(sheetData.title || 'Untitled Pod');
             if (isLoaded) {
                 await this.analysisInterface.showCurrentRow();
             }
-            
+
             // Add to recent pods
             if (sheetData.metadata && sheetData.metadata.guruHubLink) {
-                console.log('Adding recent hub link:', sheetData.metadata.guruHubLink);
+                logger.debug('Adding recent hub link:', sheetData.metadata.guruHubLink);
                 this.recentPodsManager.addRecentHub(sheetData.metadata.guruHubLink);
             }
 
-            console.log('Adding recent pod:', sheetData.title || 'Untitled Pod');
-            this.recentPodsManager.addRecentPod(targetSheetId, sheetData.title || 'Untitled Pod', sheetUrl);
+            logger.debug('Adding recent pod:', sheetData.title || 'Untitled Pod');
+            this.recentPodsManager.addRecentPod(targetSpreadsheetId, sheetData.title || 'Untitled Pod', sheetUrl);
 
             this.uiController.showStatus(`Loaded pod - ${sheetData.title || 'Untitled Pod'}`, 'success');
 
         } catch (error) {
-            console.error('Error loading pod:', error);
+            logger.error('Error loading pod:', error);
             this.uiController.showStatus(`Error loading pod: ${error.message}`, 'error');
         } finally {
             this.uiController.setLoadingState(false);
@@ -414,27 +473,27 @@ class ThreeCardBlindGuruTool {
     }
 
     async refreshSheet() {
-        if (!this.currentSheetId) {
+        if (!this.currentSpreadsheetId) {
             this.uiController.showStatus('No pod loaded', 'error');
             return;
         }
 
         try {
             this.uiController.showStatus('Refreshing pod...', 'loading');
-            
-            const sheetData = await this.sheetsAPI.getSheetData(this.currentSheetId);
+
+            const sheetData = await this.sheetsAPI.getSheetData(this.currentSpreadsheetId);
             this.currentSheetData = sheetData;
-            
+
             // Reload data into the analysis interface
             this.analysisInterface.reset();
             await this.analysisInterface.loadData(sheetData);
             await this.analysisInterface.showCurrentRow();
-            
+
             const totalRows = this.analysisInterface.getTotalRows();
             this.uiController.showStatus(`Refreshed - ${totalRows} rows available`, 'success');
-            
+
         } catch (error) {
-            console.error('Error refreshing pod:', error);
+            logger.error('Error refreshing pod:', error);
             this.uiController.showStatus(`Error refreshing: ${error.message}`, 'error');
         }
     }
@@ -444,45 +503,47 @@ class ThreeCardBlindGuruTool {
 document.addEventListener('DOMContentLoaded', () => {
     applyDeploymentBranding();
 
-    new ThreeCardBlindGuruTool();
-    
+    const app = new ThreeCardBlindGuruTool();
+    app.setupGlobalErrorCapture();
+    app.setupLogDownload();
+
     // Display app version
-    displayAppVersion();
-    
+    displayAppVersion(app);
+
     // Register service worker for PWA functionality
     if ('serviceWorker' in navigator) {
         // Listen for the controlling service worker changing (global listener)
         navigator.serviceWorker.addEventListener('controllerchange', () => {
-            console.log('🔄 Service worker controller changed, reloading...');
+            logger.debug('🔄 Service worker controller changed, reloading...');
             window.location.reload();
         });
-        
+
         window.addEventListener('load', () => {
             // Use relative path for GitHub Pages subdirectory deployment
             const swPath = new URL('sw.js', window.location.href).pathname;
-            console.log('Registering service worker at:', swPath);
+            logger.debug('Registering service worker at:', swPath);
             navigator.serviceWorker.register(swPath)
                 .then((registration) => {
-                    console.log('✅ Service Worker registered successfully:', registration.scope);
-                    
+                    logger.debug('✅ Service Worker registered successfully:', registration.scope);
+
                     // Listen for service worker updates
                     registration.addEventListener('updatefound', () => {
                         const newWorker = registration.installing;
-                        console.log('🔄 New service worker found, installing...');
-                        
+                        logger.debug('🔄 New service worker found, installing...');
+
                         newWorker.addEventListener('statechange', () => {
                             if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
                                 // New service worker is installed and waiting
-                                console.log('✨ New version available! Reload page to update.');
+                                logger.debug('✨ New version available! Reload page to update.');
                             }
                         });
                     });
                 })
                 .catch((error) => {
-                    console.error('❌ Service Worker registration failed:', error);
+                    logger.error('❌ Service Worker registration failed:', error);
                 });
         });
-        console.log('Service Worker is supported in this browser.');
+        logger.debug('Service Worker is supported in this browser.');
     }
 });
 
@@ -508,34 +569,37 @@ function applyDeploymentBranding() {
 /**
  * Display the app version from the service worker
  */
-async function displayAppVersion() {
-    const versionElement = document.getElementById('app-version');
-    
+async function displayAppVersion(app) {
+    const versionElement = getElement('app-version');
+
     if (!versionElement) {
         return;
     }
-    
+
     try {
         // Fetch the service worker file to extract version
         const swResponse = await fetch('sw.js');
         const swText = await swResponse.text();
-        
+
         // Extract version from APP_VERSION constant (simple and targeted)
         const match = swText.match(/const APP_VERSION\s*=\s*['"]([^'"]+)['"]/);
-        
+
         if (match && match[1]) {
             const version = match[1];
+            if (app) {
+                app._appVersion = version;
+            }
             const key = deploymentForPath(window.location.pathname, DEPLOYMENTS);
             const deployment = key ? DEPLOYMENTS[key] : null;
             versionElement.textContent = deployment
                 ? `${deployment.appName} — Version: ${version}`
                 : `Version: ${version}`;
-            console.log('📦 App version:', version);
+            logger.debug('📦 App version:', version);
         } else {
             versionElement.textContent = 'Version: unknown';
         }
     } catch (error) {
-        console.error('Error getting app version:', error);
+        logger.error('Error getting app version:', error);
         versionElement.textContent = 'Version: error';
     }
 }

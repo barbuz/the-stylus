@@ -28,6 +28,152 @@ takes the data it needs (row, colour, signature, column indices) as arguments.
 `GuruAnalysisInterface` keeps thin delegating methods so its rendering and event
 call sites are unchanged; new pure logic belongs here, not in the class.
 
+### The colour registry
+
+`js/domain/guruColor.js` is the single source of truth for what a guru colour is.
+`GURU_COLORS` drives the sheet schema, not just the field names:
+
+- `guruSheetName` / `colourFromSheetTitle` derive tab naming and matching.
+- `mergedGuruHeader` / `mergedColumnMapping` / `mergedLastColumn` derive the
+  merged-sheet header and column layout.
+
+`googleSheetsAPI.js` consumes these rather than hard-coding `'Red Gurus'`,
+`'Red Analysis'` or the 3..8 column numbers. Adding a fourth colour is a change
+to `GURU_COLORS` in this module, plus the real spreadsheet gaining that tab and
+its columns; the API module should need no edit. `calculateOutcomeFromAnalyses`
+takes one analysis per colour (via spread) and compares against
+`GURU_COLORS.length`, so it follows too — but note the scoring policy itself
+(majority/tie handling for an even guru count) is deliberately undecided until a
+colour is actually added. Do not add a colour without deciding that policy.
+
+## App Shell (`js/app/`)
+
+Phase 4 of #18 moved the analysis session's mutable state off the controller and
+onto one object.
+
+- `AppState` is the single source of truth for the open pod: `sheetData`
+  (and its derived `spreadsheetId`), `rows`, `rowIndex`, `guruColor`,
+  `signature`, `numDiscrepancies`, the deck-notes map/column map, the grouped
+  `deckNotesEntries`/`deckNotesValues`, the resolved per-colour `columnIndex` and
+  the `hub`. Mutate it only through its setters;
+  `reset()` clears the per-pod fields but deliberately keeps `signature`, which
+  belongs to the session rather than the pod. `currentRowKey()` /
+  `findRowIndexByKey()` give a stable row identity (tab id + original row index)
+  so a reload does not depend on the player names.
+- `AnalysisController.state` is that object; the views (`analysisView`,
+  `analysisRowRenderer`, ...) and the extracted services (`analysisActions`,
+  `analysisNavigation`, `analysisSessionLoader`) read it via `host.state`.
+- `reload({ preservePosition })` in `analysisActions.js` is the only reload
+  path. A failed refresh is non-fatal by design: the screen keeps its data.
+  Concurrent reloads coalesce rather than racing: a refresh already in flight
+  re-runs with the latest requested position, and it resolves that position
+  *after* the fetch lands, so a user who clicks Next while the write-triggered
+  refresh is in flight is not yanked back to the match they just solved.
+  The current row's outputs are not left to `reload()` alone: a score/clear
+  calls `refreshCurrentRow()`, which recomputes the discrepancy tally from
+  `state.rows` and re-renders the buttons, analysis list, outcome and tally
+  in place (no card re-fetch), so Unclaim flips to Clear My Result immediately
+  rather than after the reload re-fetch returns. `render()` and
+  `refreshCurrentRow()` share `renderRowOutputs()` so the two cannot drift, and
+  `parseSheets` derives its count from the live rows via `countMyDiscrepancies`
+  rather than trusting the fetch.
+- `EventBus` / `APP_EVENTS` replace the `window` CustomEvents that used to carry
+  the login / logout / signature flow. `main.js` subscribes in
+  `setupEventSubscriptions()`; `AuthManager` and `GuruSignature` emit and
+  subscribe through the bus they are handed. Handler registration in `main.js`
+  is guarded by `_domBound` / `_signatureHandlersBound` so it is idempotent
+  without the old reset-on-logout flags.
+
+### The guru signature (phase 5 of #18)
+
+The guru signature is session identity, not reactive state. It is set once,
+persisted, and only changes in exceptional circumstances, so it is modelled as a
+mostly immutable value rather than a live field.
+
+- `GuruSignature` (`js/modules/guruSignature.js`) is the **single owner** of the
+  current value. It keeps `this.signature` in memory and delegates persistence to
+  `UserPreferences` (Google appData, with a `localStorage` fallback when
+  preferences are unavailable). Nothing else stores a copy.
+- `AuthManager` deliberately holds **no** signature string. `this.guruSignature`
+  is the injected owner object, and `getGuruSignature()` reads through it, so
+  there is no stale duplicate to keep in sync. `main.js` wires the owner in after
+  constructing both.
+- `initSignature()` takes no argument: the owner loads the persisted value
+  itself. `main.js:onUserLoggedIn` calls it after `UserPreferences` initialises.
+- `AnalysisController` receives a **snapshot string** at construction
+  (`main.js` passes `guruSignature.getSignature()`), stored in
+  `AppState.signature`. There is no `setGuruSignature`; a pod that is open cannot
+  have its signature changed underneath it.
+- Changing the signature is therefore an explicit restart. The change affordance
+  is the header's `#guru-signature-display`, and the header is hidden while a pod
+  is open (`#sheet-editor` fullscreen). To change it a guru leaves the pod first;
+  the next `loadSheet` resolves the colour and rows against the new value.
+- `APP_EVENTS` only needs `USER_LOGGED_IN`, `USER_LOGGED_OUT` and
+  `REQUEST_GURU_SIGNATURE_CHANGE`. The old `GURU_SIGNATURE_LOADED` /
+  `GURU_SIGNATURE_CHANGED` events were removed with the duality they carried.
+
+### The clocks & notes gate (`js/modules/deckNotesEditor.js`)
+
+While the guru sheets are hidden, the app shows the Deck Notes screen one deck
+at a time before guruing can start. It is a gate and a view at once:
+
+- `groupDeckNotes(values, columnMap)` in `js/domain/deckNotes.js` collapses each
+  run of consecutive rows with the same decklist **and** identical editable data
+  (clock + notes + additional notes) into one entry with `rows[]` write targets.
+  The goldfish signature is not part of the identity. Non-consecutive repeats
+  stay separate.
+- `allClocksFilled` is the gate predicate; `deckNotesProgress` feeds the
+  "X of M clocks filled" line. Gating is clocks-only (the signature is shown,
+  not required).
+- `DeckNotesView` (`js/ui/deckNotesView.js`) is DOM-only and reuses the analysis
+  shell (`match-details` + `content-sidebar`) so one deck's cards sit on the left
+  with the controls on the right, stacking under them on mobile.
+- The deck-info panel is shared with the analysis screen via
+  `js/ui/deckInfoView.js`; the gate passes `variant: 'prominent'` for larger,
+  full-width edit affordances. Each field is a `.deck-field` that is itself the
+  edit target (the whole area is clickable); the pencil is only an affordance.
+  In the `prominent` variant the field carries a visible dashed frame and a
+  hover state. Hovering the clock shows its goldfish signature(s) with the
+  analysis screen's `.guru-signature-tooltip`.
+- Card slots are shared too: `js/ui/cardSlotsView.js` holds the three
+  `renderCardSlots*` helpers, and both `AnalysisView` and `DeckNotesView`
+  delegate to them. Card *loading* goes through one `CardPresenter` in each
+  screen, whose `loadPlayerCards(playerId, deck)` contract is
+  `<playerId>-cards` (the gate uses `playerId: 'deck-notes'`). Both screens
+  preload the *neighbours*, not the deck they are already fetching: the
+  analysis screen warms the next empty match plus the adjacent rows
+  (`rowsToPreload`), the gate warms the adjacent entries plus the next
+  clock-less deck (`decksToPreload` in `js/domain/deckNotes.js`, which mirrors
+  `nextWithoutClock`'s wrap). The one shared `ScryfallAPI` instance means those
+  images are already cached when the gate hands off to analysis, so the same
+  cards are not re-fetched.
+- Saves go through `AnalysisController.saveDeckInfoField` →
+  `AnalysisActions.saveDeckInfoField`, which resolves the grouped entry's
+  `rows[]` and writes them all in one call (a clock edit also signs column C on
+  every row). The gate therefore reuses the analysis write path rather than
+  owning one.
+- `AnalysisController.openDeckNotes()` opens the same screen from an active
+  session; the **Deck Notes** button in the analysis controls triggers it and the
+  screen offers **Back to analysis** instead of **Start guruing**. It passes
+  `startDeckString: state.currentRow?.player1`, so the screen lands on the deck
+  the open match is about rather than the first entry.
+- The gate hides **Next without clock** once `allClocksFilled` is true: there is
+  no empty clock left to jump to.
+- The header's **Deck N of M** line (`#deck-notes-progress`) is clickable and
+  opens `DeckTablePresenter` (`js/ui/deckTablePresenter.js`) over the shared
+  `OverviewTableModal`, so the gate gets a jump-to-deck table shaped like the
+  analysis screen's match table. The modal is generic: a caller passes `headers`
+  and `bodyHtml`; the analysis `MatchTablePresenter` builds its rows the same
+  way.
+  - The deck table is flat — one row per deck, **no** `deck-group-header`
+    rows (a grouped entry is a single deck, so grouping would be redundant).
+    Unlike the match table, the P1 deck is a normal column.
+  - The clock column shows the clock's **value**, not a checkmark. The
+    signature and both notes columns are tagged `overview-table-optional` and
+    hidden below 1000px, reusing the match table's breakpoint.
+  - A deck whose goldfish signature matches `state.signature` gets the same
+    `current-guru-row` highlight as the match table.
+
 ## Characterization (intentional current quirks)
 
 `tests/unit/characterization.test.js` pins these. Each is labelled CONTRACT
@@ -54,25 +200,53 @@ the-stylus/
 ├── js/
 │   ├── main.js                 # Entry point: ThreeCardBlindGuruTool bootstrap + init flow
 │   ├── config.js               # Google OAuth client ID, scopes, discovery docs, localStorage keys
+│   ├── app/                    # App-shell plumbing (no DOM)
+│   │   ├── appState.js         # Analysis session state: one object, explicit mutators + reset()
+│   │   └── events.js           # Local pub/sub + APP_EVENTS (login / logout / signature)
 │   ├── domain/                 # PURE: no DOM, no gapi, no fetch, no instance state
 │   │   ├── analyses.js         # outcome calc, normalize, labels, css class, correction string
-│   │   ├── guruColor.js        # colour list, colour->field/column resolution
+│   │   ├── deckNotes.js        # deck-notes parsing/grouping + per-colour statistics
+│   │   ├── diagnosticLog.js    # diagnostic-log formatting + redaction (buffer cap, filename)
+│   │   ├── guruColor.js        # colour registry: fields, sheet names, merged-column layout
 │   │   ├── inverseCheck.js     # inverse-error detection helpers
-│   │   └── matchRows.js        # row model build + find first incomplete/discrepancy/mirror, deck stats
+│   │   ├── matchRows.js        # row model build + find first incomplete/discrepancy/mirror, deck stats
+│   │   └── recentEntries.js    # recent-pod/hub record shape + legacy sheetId fallback
 │   ├── modules/                # ES6 class-based feature modules
 │   │   ├── authManager.js
-│   │   ├── deckNotesEditor.js
+│   │   ├── deckNotesEditor.js         # Deck Notes gate controller: grouping, index, poll, hand-off
 │   │   ├── googleSheetsAPI.js
-│   │   ├── guruAnalysisInterface.js   # Largest module; scoring UI + flow
 │   │   ├── guruSignature.js
 │   │   ├── hubManager.js
 │   │   ├── recentPods.js
 │   │   ├── scryfallAPI.js
 │   │   ├── uiController.js            # Centralised event handling / status UI
 │   │   └── userPreferences.js
+│   ├── ui/                     # View / controller split (phase 3 of #18); state lives in js/app/
+│   │   ├── analysisController.js      # Slim orchestrator: state + service calls + view.render
+│   │   ├── analysisActions.js         # Write/score workflows (set, claim, clear, reload)
+│   │   ├── analysisNavigation.js      # Row movement: next/prev, skips, mirror, next deck
+│   │   ├── analysisSessionLoader.js   # Sheet -> session state: colour, rows, start row
+│   │   ├── analysisRowRenderer.js     # Per-row render pipeline + URL/title sync
+│   │   ├── analysisEventBinder.js     # Scoring/nav button + thread-modal event wiring
+│   │   ├── analysisView.js            # All DOM rendering for the scoring screen
+│   │   ├── analysisWriter.js          # All spreadsheet writes for the scoring screen
+│   │   ├── cardPresenter.js           # Scryfall card loading + preloading
+│   │   ├── cardSlotsView.js           # Shared card-slot renderers (both screens)
+│   │   ├── deckInfoView.js            # Shared deck-info panel (compact / prominent)
+│   │   ├── deckNotesView.js           # All DOM rendering for the one-deck gate screen
+│   │   ├── deckTablePresenter.js      # Deck-list body for the shared table modal
+│   │   ├── guruColorSelector.js       # Colour dropdown, owns its dismiss listeners
+│   │   ├── matchStatus.js             # Pure match-status descriptors/markup
+│   │   ├── overviewTableModal.js      # Generic jump-to-row table modal (matches/decks)
+│   │   ├── matchTablePresenter.js     # Row/status options for the match table
+│   │   ├── threadModal.js             # Create-thread modal, open/close/destroy
+│   │   └── threadPresenter.js         # Builds the Discord thread text for a row
+│   ├── services/               # Small infrastructure helpers
+│   │   └── storage.js          # localStorage/sessionStorage wrapper: get/set/remove + JSON, safe when unavailable
 │   └── utils/                  # Pure helper functions
 │       ├── constants.js        # STATUS_TYPES, ANALYSIS_VALUES, TIME_CONSTANTS
-│       ├── domUtils.js         # Safe DOM access
+│       ├── domUtils.js         # Safe DOM access (getElement/waitForElement/addEventListenerSafe)
+│       ├── log.js              # logger + bounded diagnostic buffer (debug gated by ?debug)
 │       ├── podUtils.js         # pod name <-> code conversion
 │       └── urlUtils.js         # Sheet URL validation/parsing/sanitising
 ├── styles/main.css             # All application styles
@@ -83,9 +257,12 @@ the-stylus/
 │   ├── unit/                   # node:test suites (node --test)
 │   ├── e2e/                    # Playwright specs + in-browser Google/Scryfall stubs
 │   └── fixtures/               # Shared sheet-data fixtures and fake gapi
+├── CHANGELOG.md                # Release notes; top heading names the release
 ├── playwright.config.js        # Playwright config (dev-only; serves files statically)
 ├── .github/
-│   └── workflows/tests.yml     # CI: runs unit + e2e on push/PR to main
+│   ├── workflows/
+│   │   ├── tests.yml           # CI: runs unit + e2e on push/PR to main
+│   │   └── release.yml         # Tags the release named by CHANGELOG.md
 └── package.json                # Metadata + dev-only test scripts (no runtime deps)
 ```
 
@@ -121,11 +298,11 @@ npm run test:e2e               # Playwright only
 
 **Unit tests** (`tests/unit/`, built-in `node:test`, no dependencies):
 - `js/utils/*` and `js/domain/*` are pure and imported directly.
-- `GuruAnalysisInterface` logic is tested via `Object.create(GuruAnalysisInterface.prototype)`
-  and an explicit fake `this`. The constructor calls `bindEvents()` and needs a
-  DOM, so do not `new` it in unit tests. Since Phase 1 moved the scoring/row logic
-  into `js/domain/`, only the UI-flow methods (e.g. `processDeckNotes`) still need
-  this scaffolding.
+- `AnalysisController` UI-flow methods (e.g. `processDeckNotes`) are tested via
+  `Object.create(AnalysisController.prototype)` and an explicit fake `this`. The
+  constructor calls `bindEvents()` and needs a DOM, so do not `new` it in unit
+  tests. Since Phase 1 and Phase 3 moved the scoring/row logic into
+  `js/domain/`, only a few UI-flow methods still need this scaffolding.
 - `GoogleSheetsAPI` is tested against a fake global `gapi` (`tests/fixtures/fakeGapi.js`)
   that records requests. Tests assert on the requests and the transformations.
   Change the module to read `gapi` lazily; do not capture it at import time.
@@ -145,6 +322,19 @@ Notes:
   handler reloads the page mid-test.
 - Keep fixtures shaped like the real API payloads (ragged rows, header row at
   range index 0) so parsing paths stay honest.
+- The stub records `spreadsheetId` but does not validate it, so a write that
+  names the wrong spreadsheet still lands in the modelled cells. Assert on the
+  batchUpdate `spreadsheetId` (as `app.spec.js` does) when touching a write
+  path: the file id and the tab id are easy to swap and only the real API
+  rejects the mix-up.
+- The stub honours `updateSheetProperties` (sets the modelled `hidden` flag), so
+  `unhideGuruSheets` is observable and the clocks gate can hand off to analysis.
+  A synthetic fixture can seed hidden guru tabs with `realPodSpreadsheet({
+  guruHidden: true })`.
+- `values.batchGet` returns one cell per range; parsed A1 columns are 0-based,
+  so it adds 1 when indexing the modelled cells. Keep that offset when adding a
+  reader — an off-by-one here makes `checkedUpdateSheetData`'s precondition fail
+  and silently skips the write.
 - Some tests intentionally document current quirks rather than desired behaviour
   (look for the "Characterization:" comments). Update those deliberately.
 
@@ -214,13 +404,83 @@ put real match data in a downloadable artifact.
 Keep `runs-on: ubuntu-latest` (a standard runner) and the browser cache stays
 under the separate 10 GB-per-repository cache allowance.
 
+`release.yml` is the other workflow and is deliberately tiny: it runs only on a
+push to `main` that touches `CHANGELOG.md`, takes no artifact, and uploads
+nothing, so it costs a couple of minutes at most. It is the only workflow that
+needs `contents: write` (to create the tag), and it is granted exactly that and
+nothing else. Keep it that way — a release job that can also write packages or
+deploy is a needless privilege.
+
 ### Updating the service worker cache
 
 When you add, remove, or rename a file under `js/`, `styles/`, `images/`, or `favicons/`, you must keep the precache list in `sw.js` (`urlsToCache`) in sync, or the file will be missing offline.
 
 ### Bumping the version
 
-`APP_VERSION` at the top of `sw.js` (format `vYYYYMMDD`) drives service worker updates. Bump it for any user-visible change so installed clients pick it up. `main.js` parses this value for the footer.
+`APP_VERSION` at the top of `sw.js` (format `vYYYYMMDD`) is a **service-worker
+cache token, not a release name**. Bump it for any user-visible change so
+installed clients pick it up; `main.js` parses this value for the footer. A
+refactor that changes no user-visible behaviour need not bump it, which is why
+the same value can legitimately appear on more than one commit. Do not try to
+read a release out of this string.
+
+### Release identity and tagging
+
+A **release** is named by CalVer `YYYY.MM` (`YYYY.MM.PATCH` for a fix between
+monthly releases) and identified by an annotated git tag `vYYYY.MM`.
+
+- The single source of truth is the top release heading in `CHANGELOG.md`
+  (`## [2026.10] - 2026-10-23`). A `## [Unreleased]` heading above it is ignored.
+- The workflow matches the first `## [YYYY.MM]` heading itself, in one step, so
+  the tag and the release notes come from the same line and cannot disagree.
+  There is no helper module to keep in sync.
+- `.github/workflows/release.yml` runs on a push to `main` that touches
+  `CHANGELOG.md`, and creates the tag and a GitHub Release whose notes are that
+  changelog section. It is idempotent: an existing tag means no-op, so a
+  re-run, a docs-only edit or a replayed promotion is safe. `workflow_dispatch`
+  is the escape hatch if a push run was missed.
+- **To cut a release:** add a `## [YYYY.MM] - YYYY-MM-DD` section to the top of
+  `CHANGELOG.md` and merge it to `main`. That is the whole manual step.
+
+The heading must be exactly `## [YYYY.MM]` — the bracket content is the version,
+so `## [v2026.10]` is not a release and is skipped rather than tagged with a
+doubled `v`.
+
+Because the app has no build step and deploys by pushing to `main`, the tag
+records what is *already live* rather than triggering a deploy.
+
+Do not confuse the three version-like values:
+
+| Value | Meaning | Bumped when |
+| --- | --- | --- |
+| `APP_VERSION` (`sw.js`) | Service-worker cache token | Any user-visible change |
+| `vYYYY.MM` (git tag) | Release identity | Monthly, from `CHANGELOG.md` |
+| `SCHEMA_VERSION` (`userPreferences.js`) | Persisted-data shape | The appData shape changes |
+
+`package.json`'s `version` is unused and deliberately left alone; it is not
+published, so aligning it would only create a third source of truth.
+
+### Work happens in staging first, always
+
+`barbuz/the-stylus-staging` is the working repository; `barbuz/the-stylus` is
+production. **Do all work here first, get it tested, and only then merge to the
+production repo.** This is the standing procedure for every change, not a
+per-task choice:
+
+1. Branch, implement and test in `the-stylus-staging`.
+2. Merge to the staging `main` and let it deploy to the preview site.
+3. Once the change has been verified on the preview, replay the same commits on
+   the production repo (`barbuz/the-stylus`) and merge to its `main` to deploy.
+
+Do not open PRs against or push to the production repo until the staging copy has
+been tested. The two repositories are independent copies (see below), so a change
+merged in staging does not appear in production by itself.
+
+**Agents do not merge PRs.** The procedure above describes the project's release
+flow, not a grant of authority to an agent: opening a PR is the end of an agent's
+job. Do not mark a PR ready for review, merge it, or delete its branch unless the
+user explicitly asks. Leave the PR open with its CI status for the user to review
+and merge themselves.
 
 ### Production and preview deployments
 
@@ -261,21 +521,58 @@ two, so it would need revisiting.
 
 The leftover copy must not keep testers or automation away from the preview.
 Leaving both deployments at the same `APP_VERSION` is fine, because the caches
-are namespaced. Deploying preview actually looks like:
+are namespaced.
 
-1. Merge `preview-deployment-switch` (and anything else that should be testable)
-   into `phase2-consolidate-guru-colour` — or whichever branch is the candidate —
-   on the **production** repo. The two are siblings off `8837792`, not stacked.
-2. In the staging repo, create a PR from that branch into `main` and merge it.
+### Promoting staging to production (the monthly merge)
+
+The two repositories are **independent copies that share no history beyond
+`8837792`**. Both sides have changed the same files since, so a plain
+`git merge staging/main` into production is *not* clean: it conflicts in
+`AGENTS.md`, `index.html`, `js/config.js`, `js/main.js`, `sw.js` and
+`tests/e2e/deployment.spec.js`, plus a modify/delete on the removed
+`js/modules/guruAnalysisInterface.js`. Do not resolve those by hand — the result
+is neither tree, and it has to be redone from scratch next month.
+
+**Promote by syncing content, not by merging histories.** Staging is the source
+of truth for the app, so the production tree is replaced with the staging tree,
+and the two histories are connected so that every later month is a fast-forward.
+Run this in a clone of the **production** repo, with the staging repo added as a
+remote named `staging`:
+
+```bash
+git fetch origin main && git fetch staging main
+
+git checkout -B release/sync origin/main
+git merge -s ours --no-commit staging/main        # record staging as a parent
+git read-tree -u --reset staging/main             # take staging's tree verbatim
+git commit -m "Release 2026.10: sync from staging"
+```
+
+`merge -s ours` makes staging a parent without taking its content; `read-tree`
+then makes the tree exactly staging's. The result verifies equal to
+`staging/main`'s tree, including the deleted file. **After the first sync this
+way, later months are an ordinary clean merge**, because production's history
+now contains staging's.
+
+Two things to check before pushing:
+
+1. **Re-add anything production had and staging lacks.** At the first sync this
+   is `907cf9ce` ("Cover the production-to-preview switch in e2e"), a test that
+   exists only on production. Replay it on staging *before* the sync — this is a
+   content-sync, so anything absent from staging is deleted from production.
+2. **Compare the trees**, and only then open a PR into production's `main`.
    Pushing `main` is the deploy; Pages rebuilds by itself.
-3. Open `https://barbuz.github.io/the-stylus-staging/?pod=<POD_ID>` and test.
+
+Then add the matching `## [YYYY.MM]` section to `CHANGELOG.md` on production so
+the release is tagged there too, and verify on
+`https://barbuz.github.io/the-stylus/?pod=<POD_ID>`.
 
 **The preview repository is a manual copy.** It has never existed as a fork
 (GitHub cannot fork a repository into the same owner account), no git remote
-links it to production, and pushing to production does not update it. Whenever
-`main` moves on production, staging drifts until someone repeats step 2. If a
+links it to production, and pushing to production does not update it. If a
 preview-only fix becomes permanent, it is a change to the staging copy only and
-must be replayed on production by hand.
+must be replayed on production by hand. Whenever `main` moves on production,
+staging drifts until the next sync.
 
 ### The deployment switch lives in the footer
 
@@ -303,10 +600,14 @@ only flips between exactly two.
 - **Quotes:** single quotes, with backticks for template literals. Double quotes only for HTML attributes inside template strings.
 - **Modules:** `export class X` with a `constructor` that wires dependencies; shared helper functions live in `js/utils/` as named exports.
 - **DOM access:** use helpers from `js/utils/domUtils.js` (`getElement`, `waitForElement`, `addEventListenerSafe`) rather than direct `document.getElementById`, so missing elements degrade gracefully.
+- **Storage:** route browser persistence through `js/services/storage.js` (`getItem` / `setItem` / `removeItem` and the JSON variants) rather than calling `localStorage` directly; it degrades to a no-op when storage is unavailable or throws. Keys still come from `CONFIG.STORAGE_KEYS`.
+- **Logging:** use `logger` from `js/utils/log.js`. `logger.debug` is suppressed from the console unless `?debug` is in the URL or `window.__stylusDebug = true`; `logger.warn` / `logger.error` always pass through, so keep genuine failure paths on those. Independently of the flag, every call is captured in a 500-entry ring buffer (oldest dropped) and mirrored into `sessionStorage`; a "Log" button on the analysis screen and in the footer downloads it as a redacted `.txt` for bug reports (`js/domain/diagnosticLog.js`). Never log whole response objects, tokens or emails — capture redacts known-sensitive keys and email shapes, but the call site should not rely on it.
 - **Event handling:** register UI events in `uiController.js` / the owning module's setup method rather than inline `onclick` handlers.
 - **Config:** `js/config.js` holds the public OAuth client ID and storage keys. Do not move secrets here; `public/js/config.local.js` is gitignored for local overrides.
+- **Sheet ids:** `spreadsheetId` is the spreadsheet file id (the `batchUpdate` / `values.get` target); `sheetId` is the numeric tab id inside it (Google's own `updateCells.start.sheetId`). Never use `sheetId` for the file — passing the tab id where the file id belongs makes the real API 404, and the e2e stub does not catch it. The persisted recent-pods/hubs records are the one place the old key lingers: they are shared with production via localStorage and Drive appData, so new writes use `spreadsheetId` while reads still accept the legacy `sheetId` through `js/domain/recentEntries.js`. That fallback is temporary and marked `LEGACY`; drop it once no old records remain.
 - **No new dependencies:** the project deliberately loads everything from CDNs and ships no bundler. Confirm with the user before adding a package. Playwright is the one agreed exception, and it is dev-only: it must never be imported by app code or added to `sw.js`/`index.html`.
 - **Commits:** short imperative subjects, often `<Area>: <change>` (e.g. `Fix next button not going to current guru's matches first`).
+- **Pull requests:** open a PR and stop there. Never mark a PR ready for review, merge it, or delete its branch unless the user explicitly asks. See "Work happens in staging first" above.
 
 ## Keeping Docs in Sync
 
@@ -315,6 +616,8 @@ After code changes:
 1. Update the Repository Structure above if files were added/removed/renamed.
 2. Update `README.md` if user-facing behaviour or usage changed.
 3. Bump `APP_VERSION` in `sw.js` if the change is user-visible.
+4. Add a bullet to the top `## [YYYY.MM]` section of `CHANGELOG.md` for a
+   user-visible change; the release workflow tags from that heading.
 
 This file is the single source of repo guidance; do not reintroduce a second
 copy. `.github/copilot-instructions.md` existed for the same purpose and was
