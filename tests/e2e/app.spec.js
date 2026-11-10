@@ -197,8 +197,8 @@ test.describe('The Stylus (no Google, no network)', () => {
     //
     // The synthetic pod claims a different colour on each row, so signing in as
     // a non-Red guru proves the write path targets that colour's sheet and
-    // column rather than defaulting to Red. Phase 2 rewrote every colour
-    // branch, and Red-only coverage would not have caught a mis-mapped colour.
+    // column rather than defaulting to Red. Red-only coverage would not catch a
+    // mis-mapped colour.
 
     test('a Blue guru scores Blue\'s own sheet, not Red\'s', async ({ page }) => {
         await bootApp(page, { signature: 'bob' });
@@ -280,8 +280,8 @@ test.describe('The Stylus (no Google, no network)', () => {
     // --- Colour selection (signature not found) ------------------------------
     //
     // When a signature appears in no column the app must offer all three colours
-    // with per-colour claim counts. Phase 2 generates that markup from
-    // GURU_COLORS, so this pins the rendered structure and numbers.
+    // with per-colour claim counts. The markup is generated from GURU_COLORS, so
+    // this pins the rendered structure and numbers.
 
     test('offers all three colours with per-colour counts when the signature is unknown', async ({ page }) => {
         await bootApp(page, { signature: 'nobody' });
@@ -304,9 +304,25 @@ test.describe('The Stylus (no Google, no network)', () => {
         await expect(selection).toBeHidden();
         await expect(page.locator('#current-analysis-value')).toBeVisible();
     });
+
+    test('a double Enter in the pod field shows the picker exactly once', async ({ page }) => {
+        await bootApp(page, { signature: 'nobody' });
+        await signIn(page);
+
+        // Press Enter twice in quick succession: the field stays enabled, so
+        // both keypresses start a load before either fetch resolves. Both
+        // reach the colour picker, which must not stack.
+        const input = page.locator('#sheet-url');
+        await input.fill(POD_URL);
+        await input.press('Enter');
+        await input.press('Enter');
+
+        await expect(page.locator('#color-selection-container')).toHaveCount(1);
+        await expect(page.locator('.color-selection-screen')).toHaveCount(1);
+    });
 });
 
-// --- Signature ownership (phase 5 of #18) ------------------------------------
+// --- Signature ownership -----------------------------------------------------
 //
 // The signature is a single immutable session value. There is no live getter
 // into an open pod, so a change is an explicit restart: it must persist once,
