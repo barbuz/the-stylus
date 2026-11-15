@@ -22,7 +22,16 @@ export async function installStubs(page, { spreadsheet, preferences = null } = {
             spreadsheet: seededSpreadsheet,
             requests: [],
             batchUpdates: [],
-            preferences: seededPreferences
+            preferences: seededPreferences,
+            tokenRequests: 0,
+            deferToken: false,
+            pendingToken: null,
+            // When set, the next token request reports this non-OAuth failure
+            // through the token client's error_callback instead of resolving.
+            tokenError: null,
+            // When true, a token request does nothing at all — the popup opens
+            // but never reports back (the installed-app hang).
+            tokenSilent: false
         };
 
         // Disable the service worker entirely: its controllerchange handler
@@ -133,6 +142,16 @@ export async function installStubs(page, { spreadsheet, preferences = null } = {
                         const sheet = parsed && sheetByTitle(parsed.title);
                         if (sheet) delete sheet.cells[cellKey(parsed.startRow, parsed.startCol + 1)];
                         return ok({ clearedRange: params.range });
+                    },
+                    batchClear: (params) => {
+                        state.requests.push({ kind: 'values.batchClear', params });
+                        const ranges = params.resource.ranges || [];
+                        for (const range of ranges) {
+                            const parsed = parseA1(range);
+                            const sheet = parsed && sheetByTitle(parsed.title);
+                            if (sheet) delete sheet.cells[cellKey(parsed.startRow, parsed.startCol + 1)];
+                        }
+                        return ok({ clearedRanges: ranges });
                     }
                 },
                 batchUpdate: (params) => {
@@ -170,6 +189,22 @@ export async function installStubs(page, { spreadsheet, preferences = null } = {
             getRequests: () => state.requests.slice(),
             getBatchUpdates: () => state.batchUpdates.slice(),
             getPreferences: () => state.preferences,
+            getTokenRequests: () => state.tokenRequests,
+            // Hold the next token response until `resolveToken` is called, so a
+            // test can prove what waits on an in-flight refresh.
+            deferTokenResponse: () => { state.deferToken = true; },
+            resolveToken: () => {
+                state.deferToken = false;
+                const respond = state.pendingToken;
+                state.pendingToken = null;
+                if (respond) respond();
+            },
+            // Make the next token request report a non-OAuth failure, so a test
+            // can prove the login screen recovers from a blocked/closed popup.
+            failNextToken: (type = 'popup_closed') => { state.tokenError = type; },
+            // Make token requests do nothing, so a test can prove the backstop
+            // releases the button when the popup never reports back.
+            silenceToken: () => { state.tokenSilent = true; },
             reset() { state.requests = []; state.batchUpdates = []; }
         };
 
@@ -207,11 +242,36 @@ export async function installStubs(page, { spreadsheet, preferences = null } = {
             accounts: {
                 oauth2: {
                     // Resolving immediately with a token mirrors a user who has
-                    // already consented; no real popup is ever opened.
+                    // already consented; no real popup is ever opened. Requests
+                    // are counted so a test can prove a refresh did (or did not)
+                    // happen without one.
                     initTokenClient: (opts) => ({
                         requestAccessToken() {
-                            if (opts && typeof opts.callback === 'function') {
-                                opts.callback({ access_token: 'test-access-token', expires_in: 3600 });
+                            state.tokenRequests++;
+                            if (state.tokenSilent) {
+                                // The popup opened but never reports back.
+                                return;
+                            }
+                            if (state.tokenError) {
+                                const type = state.tokenError;
+                                state.tokenError = null;
+                                if (typeof opts.error_callback === 'function') {
+                                    opts.error_callback({ type });
+                                }
+                                return;
+                            }
+                            const respond = () => {
+                                if (opts && typeof opts.callback === 'function') {
+                                    opts.callback({ access_token: 'test-access-token', expires_in: 3600 });
+                                }
+                            };
+                            // A test can hold the token response open to observe
+                            // what waits on the refresh (e.g. a write made by the
+                            // same tap that triggered it).
+                            if (state.deferToken) {
+                                state.pendingToken = respond;
+                            } else {
+                                respond();
                             }
                         }
                     }),

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { GuruSignature } from '../../js/modules/guruSignature.js';
+import { getLogEntries, clearLogBuffer } from '../../js/utils/log.js';
 
 /**
  * GuruSignature touches the DOM and localStorage for its UI feedback. The tests
@@ -168,6 +169,53 @@ test('changeSignature seeds the input with the current value', async () => {
 
         assert.equal(env.element('guru-signature').value, 'alice');
         assert.equal(env.element('guru-signature-section').style.display, 'block');
+    } finally {
+        env.restore();
+    }
+});
+
+test('re-initialising with the same signature does not re-announce it', async () => {
+    const env = installGlobals();
+    try {
+        const prefs = makeUserPreferences({ signature: 'alice' });
+        const owner = new GuruSignature({ userPreferences: prefs, renderAuthSection() {} });
+        const seen = [];
+        owner.onSignatureSet((value) => seen.push(value));
+
+        // A resume (silent token refresh) re-runs the login flow, which calls
+        // initSignature again. The value is unchanged, so nothing should look
+        // like a change that would tear down the open pod.
+        clearLogBuffer();
+        await owner.initSignature();
+        await owner.initSignature();
+
+        assert.deepEqual(seen, ['alice'], 'only the first, genuine set is announced');
+        assert.equal(owner.getSignature(), 'alice');
+
+        // The downloaded log must show which branch ran: one announce, then a
+        // no-op. That is the evidence a resume-double-claim report turns on.
+        const lines = getLogEntries().map(e => e.message);
+        assert.equal(lines.filter(m => m.includes('initSignature: announcing')).length, 1);
+        assert.equal(lines.filter(m => m.includes('initSignature: unchanged')).length, 1);
+    } finally {
+        env.restore();
+    }
+});
+
+test('re-initialising after the signature changed announces the new value', async () => {
+    const env = installGlobals();
+    try {
+        const prefs = makeUserPreferences({ signature: 'alice' });
+        const owner = new GuruSignature({ userPreferences: prefs, renderAuthSection() {} });
+        const seen = [];
+        owner.onSignatureSet((value) => seen.push(value));
+
+        await owner.initSignature();
+        prefs.stored = 'bob';
+        await owner.initSignature();
+
+        assert.deepEqual(seen, ['alice', 'bob'], 'a real change is still announced');
+        assert.equal(owner.getSignature(), 'bob');
     } finally {
         env.restore();
     }

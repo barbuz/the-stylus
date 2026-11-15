@@ -21,6 +21,7 @@ import {
     describeOutcome
 } from '../domain/analyses.js';
 import { escapeHtml, getElement } from '../utils/domUtils.js';
+import { logger } from '../utils/log.js';
 import { renderDeckInfo, updateDeckInfoValue } from './deckInfoView.js';
 import {
     renderCardSlotsLoading,
@@ -40,28 +41,58 @@ export class AnalysisView {
      * @param {Function} handlers.onClaim
      * @param {Function} handlers.onClaimDeck
      * @param {Function} handlers.onUnclaim
+     * @param {Function} handlers.onUnclaimIncomplete
      * @param {Function} handlers.onClear
      */
     constructor(handlers = {}) {
         this.handlers = handlers;
+        // Bound listeners, kept so destroy() can remove them. The scoring
+        // buttons are shared DOM: a second view that binds without unbinding
+        // leaves the first controller's handlers attached, so one tap writes
+        // through both controllers.
+        this._listeners = [];
         this.bindButtons();
     }
 
     bindButtons() {
-        getElement('claim-button')?.addEventListener('click', () => this.handlers.onClaim?.());
-        getElement('unclaim-button')?.addEventListener('click', () => this.handlers.onUnclaim?.());
-        getElement('clear-result-button')?.addEventListener('click', () => this.handlers.onClear?.());
+        this._addListener('claim-button', 'click', () => this.handlers.onClaim?.());
+        this._addListener('unclaim-button', 'click', () => this.handlers.onUnclaim?.());
+        this._addListener('unclaim-incomplete-button', 'click', () => this.handlers.onUnclaimIncomplete?.());
+        this._addListener('clear-result-button', 'click', () => this.handlers.onClear?.());
 
         const claimDeck = getElement('claim-deck-button');
-        claimDeck?.addEventListener('click', async () => {
-            claimDeck.disabled = true;
-            claimDeck.innerHTML = '<span class="spinner"></span> Claiming...';
-            try {
-                await this.handlers.onClaimDeck?.();
-            } finally {
-                claimDeck.disabled = false;
-            }
-        });
+        if (claimDeck) {
+            const handler = async () => {
+                claimDeck.disabled = true;
+                claimDeck.innerHTML = '<span class="spinner"></span> Claiming...';
+                try {
+                    await this.handlers.onClaimDeck?.();
+                } finally {
+                    claimDeck.disabled = false;
+                }
+            };
+            claimDeck.addEventListener('click', handler);
+            this._listeners.push({ element: claimDeck, type: 'click', handler });
+        }
+    }
+
+    /** Register a listener on an element and remember it for destroy(). */
+    _addListener(id, type, handler) {
+        const element = getElement(id);
+        if (!element) {
+            return;
+        }
+        element.addEventListener(type, handler);
+        this._listeners.push({ element, type, handler });
+    }
+
+    /** Remove every listener this view bound. */
+    destroy() {
+        for (const { element, type, handler } of this._listeners) {
+            element.removeEventListener(type, handler);
+        }
+        logger.debug(`AnalysisView: unbound ${this._listeners.length} listeners`);
+        this._listeners = [];
     }
 
     /** Put a button into its disabled spinner state; returns the button. */
@@ -233,8 +264,9 @@ export class AnalysisView {
      * @param {string} options.signature
      * @param {number|null} options.analysisValue parsed analysis to highlight
      * @param {object} options.deckStats { totalMatches, unclaimedMatches }
+     * @param {number} options.incompleteCount matches claimed by this guru but not yet scored
      */
-    renderButtons({ row, colour, signature, analysisValue, deckStats }) {
+    renderButtons({ row, colour, signature, analysisValue, deckStats, incompleteCount = 0 }) {
         const signatureValue = getCurrentColorSignature(row, colour);
         const claimedByAnother = signatureValue && signatureValue.trim() !== '' && signatureValue !== signature;
         const unclaimed = !signatureValue || signatureValue.trim() === '';
@@ -244,6 +276,7 @@ export class AnalysisView {
         const claimButton = getElement('claim-button');
         const claimDeckButton = getElement('claim-deck-button');
         const unclaimButton = getElement('unclaim-button');
+        const unclaimIncompleteButton = getElement('unclaim-incomplete-button');
         const clearButton = getElement('clear-result-button');
         const claimedMessage = getElement('claimed-message');
         const nextDeckBtn = getElement('next-deck-btn');
@@ -253,6 +286,7 @@ export class AnalysisView {
             setDisplay(claimButton, 'none');
             setDisplay(claimDeckButton, 'none');
             setDisplay(unclaimButton, 'none');
+            setDisplay(unclaimIncompleteButton, 'none');
             setDisplay(clearButton, 'none');
             setDisplay(nextDeckBtn, 'none');
 
@@ -268,6 +302,7 @@ export class AnalysisView {
             scoringButtons.forEach(btn => { btn.style.display = 'none'; });
             setDisplay(claimedMessage, 'none');
             setDisplay(unclaimButton, 'none');
+            setDisplay(unclaimIncompleteButton, 'none');
             setDisplay(clearButton, 'none');
             setDisplay(nextDeckBtn, 'inline-block');
 
@@ -295,9 +330,15 @@ export class AnalysisView {
                     unclaimButton.disabled = false;
                     unclaimButton.textContent = 'Unclaim Match';
                 }
+                if (unclaimIncompleteButton) {
+                    unclaimIncompleteButton.style.display = 'block';
+                    unclaimIncompleteButton.disabled = false;
+                    unclaimIncompleteButton.textContent = `Unclaim All (${incompleteCount})`;
+                }
                 setDisplay(clearButton, 'none');
             } else {
                 setDisplay(unclaimButton, 'none');
+                setDisplay(unclaimIncompleteButton, 'none');
                 if (clearButton) {
                     clearButton.style.display = 'block';
                     clearButton.disabled = false;
