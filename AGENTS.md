@@ -75,6 +75,17 @@ The analysis session's mutable state lives on one object, not on the controller.
   `refreshCurrentRow()` share `renderRowOutputs()` so the two cannot drift, and
   `parseSheets` derives its count from the live rows via `countMyDiscrepancies`
   rather than trusting the fetch.
+- Rendering is asynchronous (the analysis list awaits its Discord thread link,
+  the card slots await Scryfall), so two renders can overlap — a score's
+  `refreshCurrentRow()` and a reload's `render()`, or a reload and a Next. A
+  slower older render must not paint its row over the newer one, or the screen
+  flashes between two matches. `AnalysisRowRenderer` therefore hands each render
+  a generation token (`_beginRender` / `_isCurrent`) and bails after every await
+  once a newer render has started; `CardPresenter` keeps the same per-player
+  guard so a stale image load cannot fill the slots. Any new awaited step inside
+  `render()` / `renderRowOutputs()` / `renderAnalysisDisplay()` must re-check the
+  token before writing, and the deck-notes gate shares `CardPresenter`, so keep
+  the guard inside it rather than at the call sites.
 - `EventBus` / `APP_EVENTS` carry the login / logout / signature flow.
   `main.js` subscribes in `setupEventSubscriptions()`; `AuthManager` and
   `GuruSignature` emit and subscribe through the bus they are handed. Handler
@@ -97,6 +108,71 @@ mostly immutable value rather than a live field.
   constructing both.
 - `initSignature()` takes no argument: the owner loads the persisted value
   itself. `main.js:onUserLoggedIn` calls it after `UserPreferences` initialises.
+  It is **idempotent**: `USER_LOGGED_IN` can still arrive more than once for one
+  session (a genuine re-login, a restored session), so `initSignature` may be
+  called again with the same value. When `initialized` is already true and the
+  value is unchanged it must do nothing and emit no `onSignatureSet` —
+  re-announcing an unchanged value looks like a change, tears the open pod down,
+  and reopens it as a *second* controller while the first is still listening.
+  This guard is the last line of defence, not the first: the token refresh below
+  must not re-emit `USER_LOGGED_IN` at all.
+- **A token refresh is not a login.** The access token expires after an hour, so
+  `AuthManager` renews it in the background. That path (`attemptAutoReauth` →
+  `applyRefreshedToken`) must set the token, persist it and re-arm the expiry
+  timer **only** — it must never render the shell, reset the open pod, or emit
+  `USER_LOGGED_IN`. Routing a refresh through `handleAuthSuccess` re-runs the
+  whole login flow and is what returned a guru to the home input mid-session.
+  - The token request needs a **user gesture**, so the expiry timer does not
+    fire it directly: `setupReauthTimer` arms a one-shot `pointerdown`/`keydown`
+    listener (`_armRefreshOnGesture`) and the refresh runs on the guru's next
+    interaction. Firing it from a bare timer opens a Google screen with no
+    gesture to attach it to, which is what strands a phone user there.
+  - The armed listener is **visibility-scoped, not time-limited**. A
+    `visibilitychange` handler removes the gesture listener while the page is
+    hidden and re-adds it when the page returns, so a phone left locked or a
+    guru who switches apps never fires a request in the background — and, just
+    as importantly, a guru who comes back *after the token expired* still has
+    the refresh armed for their first tap. Do not replace this with a
+    "listener expires after N minutes" timeout: that drops the listener while
+    the page is hidden, which is exactly the long-absence case it needs to
+    cover. The watcher is installed for the whole session by `saveTokens` (a tab
+    frozen *before* the expiry timer fires would otherwise resume with no
+    watcher) and re-decides from the stored expiry on each resume, so a resume
+    after a successful refresh arms nothing. Only `clearStoredAuth` tears it
+    down.
+  - `attemptAutoReauth` refuses to request a token without `{ userGesture: true }`
+    and coalesces concurrent callers onto one `refreshPromise`. This gate is for
+    the **mid-session** refresh only, where a bare timer would open a Google
+    screen the guru cannot act on. It is **not** the load-time path: the two are
+    deliberately separate, and conflating them is what broke installed-app
+    sign-in.
+- **Coming back at load is a silent sign-in, not a gesture-gated refresh.**
+  `checkAuthStatus` must sign a remembered guru back in on page load with a
+  silent token request (`_attemptSilentLogin`, `prompt: 'none'`). Opening the app
+  *is* the gesture, so this is safe unattended and is the auto-login the installed
+  app depends on: a standalone window cannot complete the interactive sign-in
+  popup, so it must never be the only route to a session. Keep the three load
+  branches — stored-but-expired, no stored token, and stored-token validation
+  failure — all falling back to `_attemptSilentLogin()` before showing the login
+  screen. A guru who did not tick "Remember me" gets no silent request.
+  - This is distinct from the refresh rule below. `attemptAutoReauth` is the
+    *renewal* of a session already open; `_attemptSilentLogin` is the *restore*
+    of a session at start-up. A refresh keeps the guru in place; a silent
+    sign-in completes the normal login flow through `handleAuthSuccess`.
+- **A sign-in that never reports back must not strand the button.** The GIS
+  token client can fail without ever calling `callback`: the popup is blocked or
+  closed, or it opens and never hands the token back. The login token client
+  therefore passes an `error_callback` and `login()` arms a `LOGIN_TIMEOUT_MS`
+  backstop; both route to `_handleLoginFailure`, which releases the button and
+  shows a reason. The refresh token client deliberately does **not** get the same
+  treatment — a refresh is silent by design and `ensureValidToken()` already
+  covers a stall. `_isStandaloneApp()` is what lets the failure message point an
+  installed-app guru at the browser. Never let a failed sign-in leave the button
+  on "Signing in..." or fail without a captured `warn` line saying which reason
+  it was. Do not reinstate a proactive "sign-in only works in the browser" hint
+  on the login screen: it was added on a mistaken reading of the bug (a
+  standalone window *does* have an opener, and the popup behaves identically
+  there), and a remembered guru signs in from the installed app perfectly well.
 - `AnalysisController` receives a **snapshot string** at construction
   (`main.js` passes `guruSignature.getSignature()`), stored in
   `AppState.signature`. There is no `setGuruSignature`; a pod that is open cannot
@@ -105,6 +181,15 @@ mostly immutable value rather than a live field.
   is the header's `#guru-signature-display`, and the header is hidden while a pod
   is open (`#sheet-editor` fullscreen). To change it a guru leaves the pod first;
   the next `loadSheet` resolves the colour and rows against the new value.
+- **A closed controller must unbind.** The scoring and navigation buttons are
+  shared DOM, not owned by one controller. `AnalysisController.destroy()` (called
+  when a signature change closes the pod) must tear down everything that attached
+  a listener to those elements: `AnalysisView.destroy()` removes the
+  claim/unclaim/clear/claim-deck handlers and `AnalysisEventBinder.destroy()`
+  removes the win/tie/loss, navigation and `current-row-info` handlers. A
+  surviving listener means one tap drives two controllers, each on its own row,
+  so a score or Claim Deck writes a match the guru never touched. Any new
+  listener on a shared element must be registered so it can be removed again.
 - `APP_EVENTS` needs only `USER_LOGGED_IN`, `USER_LOGGED_OUT` and
   `REQUEST_GURU_SIGNATURE_CHANGE`. Do not add per-value signature events: the
   owner object makes them unnecessary.
@@ -319,6 +404,10 @@ Notes:
   handler reloads the page mid-test.
 - Keep fixtures shaped like the real API payloads (ragged rows, header row at
   range index 0) so parsing paths stay honest.
+- The stub's token client resolves synchronously by default, which hides any
+  race between a refresh and a write. `deferTokenResponse()` /
+  `resolveToken()` hold the response open so a test can prove a write waited for
+  it (see `authRefresh.spec.js`, which scores a match on the refreshing tap).
 - The stub records `spreadsheetId` but does not validate it, so a write that
   names the wrong spreadsheet still lands in the modelled cells. Assert on the
   batchUpdate `spreadsheetId` (as `app.spec.js` does) when touching a write
@@ -414,12 +503,13 @@ When you add, remove, or rename a file under `js/`, `styles/`, `images/`, or `fa
 
 ### Bumping the version
 
-`APP_VERSION` at the top of `sw.js` (format `vYYYYMMDD`) is a **service-worker
-cache token, not a release name**, and `main.js` parses it for the footer.
-`README.md` covers when to bump it. The constraint that matters here: do not
-read a release out of this string, and do not try to keep it in step with the
-tag — a refactor with no user-visible effect legitimately leaves the same value
-on more than one commit.
+`APP_VERSION` at the top of `sw.js` (format `vYYYYMMDD`, with a trailing letter
+such as `vYYYYMMDDb` when more than one bump lands on the same day) is a
+**service-worker cache token, not a release name**, and `main.js` parses it for
+the footer. `README.md` covers when to bump it. The constraint that matters
+here: do not read a release out of this string, and do not try to keep it in
+step with the tag — a refactor with no user-visible effect legitimately leaves
+the same value on more than one commit.
 
 ### Release identity and tagging
 
@@ -609,6 +699,12 @@ only flips between exactly two.
 - **DOM access:** use helpers from `js/utils/domUtils.js` (`getElement`, `waitForElement`, `addEventListenerSafe`) rather than direct `document.getElementById`, so missing elements degrade gracefully.
 - **Storage:** route browser persistence through `js/services/storage.js` (`getItem` / `setItem` / `removeItem` and the JSON variants) rather than calling `localStorage` directly; it degrades to a no-op when storage is unavailable or throws. Keys still come from `CONFIG.STORAGE_KEYS`.
 - **Logging:** use `logger` from `js/utils/log.js`. `logger.debug` is suppressed from the console unless `?debug` is in the URL or `window.__stylusDebug = true`; `logger.warn` / `logger.error` always pass through, so keep genuine failure paths on those. Independently of the flag, every call is captured in a 500-entry ring buffer (oldest dropped) and mirrored into `sessionStorage`; a "Log" button on the analysis screen and in the footer downloads it as a redacted `.txt` for bug reports (`js/domain/diagnosticLog.js`). Never log whole response objects, tokens or emails — capture redacts known-sensitive keys and email shapes, but the call site should not rely on it.
+  - **The buffer is the scarce resource, not the console.** It is a fixed 500 entries and a working session produces far more, so a line that a bug report would not miss must not consume a slot — it evicts the setup and teardown lines that actually explain the bug. `logger.trace` is the escape hatch: it reaches the console under `?debug` like `debug`, but is **never captured**. A trace line is gone from the file a guru downloads, and a guru on a phone cannot open a console, so demote deliberately.
+  - **Demote by volume, not by repetition.** The rule is not "moved to trace if it repeats"; it is "moved to trace if it is *large or valueless*". A line that is small and carries content stays on `debug` even if it fires many times (a hub title, a column mapping, a pod count), because a report needs the value and the line costs little. A line that is huge or carries nothing goes to `trace` even if it fires once (a whole-sheet dump). When a line is *both* large *and* carries content, **compact it instead of dropping it** — keep a one-line summary on `debug` and the full object on `trace` (e.g. the merged sheet logs its row count; the preferences dump logs its pod/hub counts and whether the signature is set).
+  - **Never drop the only record of a value a report needs.** Before demoting, ask what the report would say without it: a write line without the written value, a load line without the row count, a signature line without the signature. Keep or compact those. Absence of a success line is only acceptable when a *failure* is logged on `warn`/`error` somewhere else, so a reader can still tell "did not happen" from "happened silently".
+  - **Tag actor identity.** `AnalysisController` numbers itself (`this.label`, e.g. `#2`) and `AnalysisWriter` stamps every write with it, because the scoring screen is rebuilt on every pod open and a bug can leave two live at once. Keep new lifecycle lines tagged; when a write goes through `AnalysisWriter`, the single `✍️ <label> <action> -> <ranges> = <value>` line is the record — the full payload stays on `trace`. Do not re-add a second captured dump of the same write at the API layer.
+  - **One line per event, ranges not cells.** `compressRanges` turns a 20-row claim into `71-90:5`. Prefer a compact summary line plus a `trace` detail over a captured per-cell dump.
+  - **Log the branch, not just the outcome.** The resume double-claim bug lived in an early-return inside `GuruSignature.initSignature`; the fix is only diagnosable in a report if the log says *which* branch ran. Where a function has a path that a bug could take, log the path (e.g. `initSignature: unchanged, no-op` vs `initSignature: announcing …`).
 - **Event handling:** register UI events in `uiController.js` / the owning module's setup method rather than inline `onclick` handlers.
 - **Config:** `js/config.js` holds the public OAuth client ID and storage keys. Do not move secrets here; `public/js/config.local.js` is gitignored for local overrides.
 - **Sheet ids:** `spreadsheetId` is the spreadsheet file id (the `batchUpdate` / `values.get` target); `sheetId` is the numeric tab id inside it (Google's own `updateCells.start.sheetId`). Never use `sheetId` for the file — passing the tab id where the file id belongs makes the real API 404, and the e2e stub does not catch it. The persisted recent-pods/hubs records are the one place the old key lingers: they are shared with production via localStorage and Drive appData, so new writes use `spreadsheetId` while reads still accept the legacy `sheetId` through `js/domain/recentEntries.js`. That fallback is temporary and marked `LEGACY`; drop it once no old records remain.

@@ -10,6 +10,20 @@ A browser-based tool for gurus to edit result sheets for 3 Card Blind MTG matche
 - Grant permissions for Google Sheets access
 - Your session will be remembered between visits
 
+Your sign-in is renewed in the background before it expires, so a long guruing
+session does not interrupt you. Your browser only allows that renewal with a
+recent tap or keypress, so if you step away for a while it renews on your next
+interaction — you are never dropped back to the home screen, and never left on a
+Google page you cannot get past. If a renewal is not possible, you are simply
+asked to sign in again.
+
+**Installed app:** if you have installed The Stylus to your home screen, it
+signs you in the same way as the browser. As long as you ticked "Remember me for
+automatic sign-in" when you last signed in, reopening the installed app restores
+your session on its own, with no popup to tap through. If you are ever asked to
+sign in again inside the installed app and the Google screen does not complete,
+sign in once from the normal browser — the installed app reuses that session.
+
 **Note:** You need a Google account to use this app, both because you need to be logged in to edit sheets
 and because the app stores its configuration on your Google appData. This means that you can change devices
 and continue guruing!
@@ -45,6 +59,8 @@ and continue guruing!
 - Use the **Deck Notes** button in the controls to revisit the clocks and notes
   screen, opening on the current match's first player deck, then
   **Back to analysis** to return
+- While a match you have claimed is open, **Unclaim All (N)** releases every
+  match you have claimed but not yet scored, in one action
 - Changes are saved automatically to the Google Sheet
 
 ### 6. **Track Progress**

@@ -10,6 +10,62 @@ a release; `## [Unreleased]` may sit above it and is ignored.
 Each release lists what changed for a guru, with the PR number that carried it.
 Compare this file between the two deployments to see what production is missing.
 
+## [2026.11] - 2026-11-15
+
+Monthly promotion to production. It carries the session-lifecycle fixes (silent
+sign-in restore, in-place token refresh, no double-claim on resume),
+generation-guarded rendering, the Unclaim All button and a leaner diagnostic
+log.
+
+### Added
+
+- An **Unclaim All (N)** button, shown next to Unclaim Match while a match you
+  have claimed is open. It releases every match you have claimed but not yet
+  scored, in one action, so you can hand back claims you have not got to
+  (#23, #24)
+
+### Changed
+
+- The downloaded diagnostic log is much smaller and easier to read. The scoring
+  session is now identified by a short id, so every write says which session
+  made it (and what value it wrote), and the log records each app boot and each
+  phone lock/unlock. Whole sheet dumps and other repeated noise are no longer
+  included, so the file a guru attaches to a bug report keeps the events that
+  explain the problem instead of being pushed out by detail (#26)
+
+### Fixed
+
+- Signing in from the installed app works again. A change meant to keep a
+  long session alive also stopped the app signing a remembered guru back in when
+  it reopened, so an installed app (which has no browser tab to fall back to)
+  was left on the sign-in screen and the sign-in button could sit on
+  "Signing in..." with nothing happening. Reopening the app now restores your
+  session silently, exactly as it used to, and if a sign-in ever does not
+  complete the button is released and you are told what to do (#28)
+- Reopening the app (for example after locking the phone) no longer claims
+  matches you did not touch. A resume re-ran the login flow, which treated the
+  unchanged signature as a change, tore the open pod down and reopened it as a
+  second session while the first was still listening — so one tap on Claim Deck
+  or a score ran twice, each time on a different match (#25)
+- Scoring a match no longer briefly flashes the match you were just on, and
+  moving quickly through matches no longer shows a previous match's cards: an
+  overlapping background refresh or a slow card load could paint its row over
+  the one you had moved to. Renders are now generation-guarded, so only the
+  newest one writes after an await (#22)
+- A silent Google sign-in refresh no longer drops you back to the home screen or
+  strands you on a Google page. The refresh used to re-run the whole login flow,
+  which reset the open pod; it now renews the token in place and leaves you
+  exactly where you are. Because the browser only allows that refresh with a
+  recent tap or keypress, it waits for your next interaction instead of trying
+  (and failing, or hanging on a Google screen) while your phone is locked
+- Scoring a match on the very tap that renews your sign-in now waits for the new
+  token before writing, so the score lands on a valid session instead of being
+  sent with the expired one and failing. The same applies if you come back to
+  the app after it has been in the background past the expiry: the first tap
+  renews the sign-in, and the action that tap performs still completes. If the
+  renewal is slow, a "Renewing your sign-in..." note appears so the pause is
+  explained rather than looking like a frozen button (#27)
+
 ## [2026.10.1] - 2026-11-10
 
 ### Fixed

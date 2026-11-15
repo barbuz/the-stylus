@@ -30,6 +30,8 @@ class ThreeCardBlindGuruTool {
         this.authManager.guruSignature = this.guruSignature;
         this.sheetsAPI = new GoogleSheetsAPI(this.authManager);
         this.uiController = new UIController(this.guruSignature);
+        // Let the auth layer explain a slow refresh on the shared status line.
+        this.authManager.uiController = this.uiController;
         this.analysisInterface = null; // Initialized after auth
         this.recentPodsManager = new RecentPodsManager();
 
@@ -80,6 +82,12 @@ class ThreeCardBlindGuruTool {
             if (this.applyDeploymentPreference()) {
                 return;
             }
+
+            // The buffer survives a resume, so mark each boot to keep the
+            // one-timeline log readable across page loads.
+            this._bootCount = (this._bootCount || 0) + 1;
+            logger.debug(`——— app boot #${this._bootCount} (${navigator.userAgent.includes('Mobile') ? 'mobile' : 'desktop'}) ———`);
+            this.watchPageVisibility();
 
             // Show loading while initializing
             this.showLoading('Initializing application...');
@@ -165,6 +173,26 @@ class ThreeCardBlindGuruTool {
             if (event.target.closest('[data-log-download]')) {
                 this.downloadDiagnosticLog();
             }
+        });
+    }
+
+    /**
+     * Log page hide/show so a resume is visible in the downloaded log. Bound
+     * once.
+     */
+    watchPageVisibility() {
+        if (this._visibilityBound) {
+            return;
+        }
+        this._visibilityBound = true;
+        document.addEventListener('visibilitychange', () => {
+            logger.debug(`👁️ Page ${document.visibilityState}`);
+        });
+        window.addEventListener('pageshow', (event) => {
+            logger.debug(`👁️ Page shown${event.persisted ? ' (from bfcache)' : ''}`);
+        });
+        window.addEventListener('pagehide', (event) => {
+            logger.debug(`👁️ Page hidden${event.persisted ? ' (to bfcache)' : ''}`);
         });
     }
 
